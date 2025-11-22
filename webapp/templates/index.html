@@ -389,21 +389,53 @@ execution: first_day_only
                     const result = await response.json();
                     
                     if (result.success) {
+                        const searchQuery = trimmed.toUpperCase();
                         tickerSearchResults = result.tickers || [];
                         selectedSearchIndex = -1;
                         
-                        if (tickerSearchResults.length === 0) {
-                            resultsEl.innerHTML = '<div class="px-3 py-2 text-sm text-gray-500">No tickers found. Press Enter to validate and add.</div>';
-                        } else {
-                            resultsEl.innerHTML = tickerSearchResults.map((ticker, idx) => {
+                        // Check if the exact search query is already in the results
+                        const exactMatch = tickerSearchResults.find(t => t.ticker && t.ticker.toUpperCase() === searchQuery);
+                        
+                        let html = '';
+                        let displayIndex = 0;
+                        
+                        // Always show "Add [TICKER]" option if exact match not found
+                        if (!exactMatch) {
+                            html += `
+                                <div 
+                                    class="px-3 py-2 hover:bg-green-50 cursor-pointer ticker-search-result bg-green-50 border-l-4 border-green-500"
+                                    data-index="${displayIndex}"
+                                    onclick="validateAndAddTicker('${searchQuery}')"
+                                    onmouseenter="highlightSearchResult(${displayIndex})"
+                                >
+                                    <div class="flex justify-between items-center">
+                                        <div>
+                                            <span class="font-semibold text-green-700">Add "${searchQuery}"</span>
+                                            <span class="text-sm text-gray-600 ml-2">Validate and add to system</span>
+                                        </div>
+                                        <span class="text-xs text-green-600 font-semibold">NEW</span>
+                                    </div>
+                                </div>
+                            `;
+                            // Add placeholder to tickerSearchResults array at the beginning for keyboard navigation
+                            tickerSearchResults.unshift({ticker: searchQuery, is_new: true});
+                            displayIndex++;
+                        }
+                        
+                        // Show existing results (skip the "new" placeholder we may have added)
+                        const resultsToShow = exactMatch ? tickerSearchResults : tickerSearchResults.filter(t => !t.is_new);
+                        
+                        if (resultsToShow.length > 0) {
+                            html += resultsToShow.map((ticker, idx) => {
                                 const displayName = ticker.company_name || ticker.ticker;
                                 const assetType = ticker.asset_type || 'Stock';
+                                const actualIdx = displayIndex + idx;
                                 return `
                                     <div 
-                                        class="px-3 py-2 hover:bg-blue-50 cursor-pointer ticker-search-result ${idx === 0 ? 'bg-blue-50' : ''}"
-                                        data-index="${idx}"
-                                        onclick="selectTickerFromSearch(${idx})"
-                                        onmouseenter="highlightSearchResult(${idx})"
+                                        class="px-3 py-2 hover:bg-blue-50 cursor-pointer ticker-search-result"
+                                        data-index="${actualIdx}"
+                                        onclick="selectTickerFromSearch(${actualIdx})"
+                                        onmouseenter="highlightSearchResult(${actualIdx})"
                                     >
                                         <div class="flex justify-between items-center">
                                             <div>
@@ -416,6 +448,13 @@ execution: first_day_only
                                 `;
                             }).join('');
                         }
+                        
+                        if (html === '') {
+                            // Fallback - shouldn't happen
+                            html = '<div class="px-3 py-2 text-sm text-gray-500">No results found.</div>';
+                        }
+                        
+                        resultsEl.innerHTML = html;
                     } else {
                         resultsEl.innerHTML = '<div class="px-3 py-2 text-sm text-red-500">Error: ' + (result.error || 'Unknown error') + '</div>';
                     }
@@ -456,7 +495,13 @@ execution: first_day_only
             if (index < 0 || index >= tickerSearchResults.length) return;
             
             const tickerData = tickerSearchResults[index];
-            await addTickerFromData(tickerData);
+            
+            // If this is a "new" ticker that needs validation, validate it first
+            if (tickerData.is_new) {
+                await validateAndAddTicker(tickerData.ticker);
+            } else {
+                await addTickerFromData(tickerData);
+            }
         }
         
         async function addTickerFromData(tickerData) {
@@ -498,11 +543,16 @@ execution: first_day_only
                     // Select first result
                     selectTickerFromSearch(0);
                 } else {
-                    // Try to validate and add the typed value
+                    // No results - try to validate and add the typed value
                     const input = document.getElementById('builder-ticker-input');
                     const query = input.value.trim().toUpperCase();
                     if (query) {
-                        validateAndAddTicker(query);
+                        // If there's a "new" option in results, select it (which will trigger validation)
+                        if (tickerSearchResults.length > 0 && tickerSearchResults[0].is_new) {
+                            selectTickerFromSearch(0);
+                        } else {
+                            validateAndAddTicker(query);
+                        }
                     }
                 }
             } else if (event.key === 'ArrowDown') {
@@ -533,6 +583,15 @@ execution: first_day_only
         }
         
         async function validateAndAddTicker(ticker) {
+            const loadingEl = document.getElementById('ticker-search-loading');
+            const dropdown = document.getElementById('ticker-search-dropdown');
+            const resultsEl = document.getElementById('ticker-search-results');
+            
+            // Show loading state
+            loadingEl.classList.remove('hidden');
+            dropdown.classList.remove('hidden');
+            resultsEl.innerHTML = '<div class="px-3 py-2 text-sm text-gray-500">Validating ticker...</div>';
+            
             try {
                 const response = await fetch(`${API_BASE}/api/tickers/validate`, {
                     method: 'POST',
@@ -541,19 +600,40 @@ execution: first_day_only
                 });
                 
                 const result = await response.json();
+                loadingEl.classList.add('hidden');
+                
                 if (result.success && result.valid && result.valid.length > 0) {
                     const tickerInfo = result.ticker_info && result.ticker_info[0];
                     if (tickerInfo) {
+                        // Successfully validated - add it
                         await addTickerFromData(tickerInfo);
+                        // Show success message briefly
+                        resultsEl.innerHTML = `<div class="px-3 py-2 text-sm text-green-600">✓ "${ticker}" validated and added!</div>`;
+                        setTimeout(() => {
+                            hideTickerDropdown();
+                        }, 1000);
                     } else {
                         // Fallback if no info returned
                         await addTickerFromData({ticker: ticker, company_name: ticker, asset_type: 'Stock'});
+                        resultsEl.innerHTML = `<div class="px-3 py-2 text-sm text-green-600">✓ "${ticker}" added!</div>`;
+                        setTimeout(() => {
+                            hideTickerDropdown();
+                        }, 1000);
                     }
                 } else {
-                    alert(`Ticker "${ticker}" is not valid or could not be found.`);
+                    // Invalid ticker
+                    resultsEl.innerHTML = `<div class="px-3 py-2 text-sm text-red-500">✗ Ticker "${ticker}" is not valid or could not be found.</div>`;
+                    setTimeout(() => {
+                        // Re-run search to show the "Add" option again
+                        const input = document.getElementById('builder-ticker-input');
+                        if (input.value.trim().toUpperCase() === ticker) {
+                            searchTickers(input.value);
+                        }
+                    }, 2000);
                 }
             } catch (error) {
-                alert('Error validating ticker: ' + error.message);
+                loadingEl.classList.add('hidden');
+                resultsEl.innerHTML = `<div class="px-3 py-2 text-sm text-red-500">Error validating ticker: ${error.message}</div>`;
             }
         }
         
@@ -873,12 +953,39 @@ execution: first_day_only
                         return;
                     }
                     
-                    container.innerHTML = runs.map(run => `
+                    container.innerHTML = runs.map(run => {
+                        // Calculate if run beat QQQ
+                        const metrics = run.metrics || {};
+                        const totalReturn = metrics.total_return || 0;
+                        const qqqReturn = metrics.qqq_baseline_return || (run.qqq_metrics && run.qqq_metrics.total_return) || 0;
+                        const beatQQQ = metrics.beat_qqq !== undefined ? metrics.beat_qqq : (totalReturn > qqqReturn);
+                        
+                        // Determine chip styling
+                        let qqqChip = '';
+                        if (qqqReturn !== 0 || totalReturn !== 0) {
+                            // Only show chip if we have QQQ comparison data
+                            if (beatQQQ) {
+                                qqqChip = '<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">✓ Beat QQQ</span>';
+                            } else {
+                                qqqChip = '<span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800">✗ Under QQQ</span>';
+                            }
+                        }
+                        
+                        return `
                         <div class="border border-gray-300 rounded-md p-4 hover:bg-gray-50">
                             <div class="flex justify-between items-center">
-                                <div>
-                                    <h3 class="font-semibold text-lg">${run.name || 'Unnamed Run'}</h3>
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <h3 class="font-semibold text-lg">${run.name || 'Unnamed Run'}</h3>
+                                        ${qqqChip}
+                                    </div>
                                     <p class="text-sm text-gray-600">${run.strategy_name} | ${run.start_date} to ${run.end_date}</p>
+                                    ${totalReturn !== 0 || qqqReturn !== 0 ? 
+                                        `<p class="text-xs text-gray-500 mt-1">
+                                            Return: <span class="${totalReturn >= 0 ? 'text-green-600' : 'text-red-600'} font-medium">${totalReturn.toFixed(2)}%</span>
+                                            ${qqqReturn !== 0 ? ` | QQQ: <span class="text-gray-600">${qqqReturn.toFixed(2)}%</span>` : ''}
+                                        </p>` : ''
+                                    }
                                 </div>
                                 <div class="flex space-x-2">
                                     <button onclick="viewRun(${run.run_id})" class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">
@@ -890,7 +997,8 @@ execution: first_day_only
                                 </div>
                             </div>
                         </div>
-                    `).join('');
+                    `;
+                    }).join('');
                 }
             } catch (error) {
                 console.error('Error loading runs:', error);

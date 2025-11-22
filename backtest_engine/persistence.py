@@ -258,7 +258,7 @@ class BacktestPersistence:
             conn.close()
     
     def list_runs(self) -> List[Dict[str, Any]]:
-        """List all saved runs."""
+        """List all saved runs with key metrics."""
         conn = sqlite3.connect(self.db_path)
         
         query = """
@@ -269,9 +269,41 @@ class BacktestPersistence:
         """
         
         df = pd.read_sql_query(query, conn)
+        runs = df.to_dict('records')
+        
+        # Add key metrics to each run for quick display
+        for run in runs:
+            run_id = run['run_id']
+            # Get key metrics (total_return and qqq_baseline_return)
+            metrics_df = pd.read_sql_query(
+                "SELECT metric_name, metric_value FROM metrics WHERE run_id = ? AND metric_name IN ('total_return', 'qqq_baseline_return', 'beat_qqq')",
+                conn,
+                params=(run_id,)
+            )
+            if not metrics_df.empty:
+                metrics = dict(zip(metrics_df['metric_name'], metrics_df['metric_value']))
+                run['metrics'] = metrics
+            else:
+                run['metrics'] = {}
+            
+            # Also get QQQ metrics from metadata if available
+            metadata_df = pd.read_sql_query(
+                "SELECT metadata_json FROM run_metadata WHERE run_id = ?",
+                conn,
+                params=(run_id,)
+            )
+            if not metadata_df.empty:
+                try:
+                    import json
+                    metadata = json.loads(metadata_df.iloc[0]['metadata_json'])
+                    if 'qqq_metrics' in metadata:
+                        run['qqq_metrics'] = metadata['qqq_metrics']
+                except:
+                    pass
+        
         conn.close()
         
-        return df.to_dict('records')
+        return runs
     
     def load_run(self, run_id: int) -> Dict[str, Any]:
         """Load a complete backtest run."""

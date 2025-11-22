@@ -12,6 +12,28 @@ A flexible, local-first Python backtesting and analysis suite for ETFs and stock
 - **Run Comparison**: Compare multiple backtest runs side-by-side
 - **Persistent Storage**: All runs saved to SQLite for later analysis
 
+## Screenshots
+
+### Strategy Builder
+The Strategy Builder provides a guided interface to create trading strategies without manually editing YAML. Features include type-ahead ticker search with validation, automatic company name lookup, and live YAML preview.
+
+![Strategy Builder](screenshots/Screenshot-Strategy-Builder.png)
+
+### YAML Editor Tab
+For advanced users, you can directly edit YAML strategy files with syntax validation and strategy file selection.
+
+![YAML Editor](screenshots/Screenshot-YAML-Tab.png)
+
+### Results Viewer
+View detailed backtest results with interactive charts, comprehensive metrics tables, QQQ baseline comparison, and trade history. The equity curve chart shows both strategy and QQQ performance overlaid for easy comparison.
+
+![Results Viewer](screenshots/Screenshot%20-%20Results%20Viewer.png)
+
+### Strategy Comparison
+Compare two backtest runs side-by-side with conditional highlighting (winners in green), overall winner declaration, and detailed metric-by-metric comparison. Includes equity curve overlay charts.
+
+![Strategy Comparison](screenshots/Screenshot%20-%20Strategy%20Comparison.png)
+
 ## Installation
 
 1. Clone the repository:
@@ -37,12 +59,23 @@ mkdir -p data webapp/templates examples/sample_strategies
 python run.py
 ```
 
-Or alternatively:
+The server will start on port 5000 by default. If you need to use a different port (e.g., due to port conflicts), use the `--port` argument:
+```bash
+python run.py --port 5001
+```
+
+You can also specify other options:
+```bash
+python run.py --port 5001 --debug  # Enable debug mode
+python run.py --host 127.0.0.1     # Bind to localhost only
+```
+
+Or alternatively, run directly:
 ```bash
 python webapp/app.py
 ```
 
-2. Open your browser to `http://localhost:5000`
+2. Open your browser to `http://localhost:5000` (or the port you specified)
 
 3. Run a backtest:
    - Select the "Run Backtest" tab
