@@ -49,29 +49,25 @@ class MixedWinnersLosersStrategy(BaseStrategy):
         
         target_positions = set(winners + laggards)
         
-        # Sell positions not in target
-        for ticker in list(self.current_positions):
-            if ticker not in target_positions:
-                signals.append({
-                    'ticker': ticker,
-                    'action': 'SELL',
-                    'shares': None,  # Sell all
-                    'reason': 'Not in target list'
-                })
-                self.current_positions.discard(ticker)
-        
-        # Buy target positions
+        # Accumulation strategy: Only buy target positions, never sell
+        # Buy target positions (whether we already hold them or not - accumulate positions)
         for ticker in target_positions:
-            if ticker not in self.current_positions:
-                position_type = 'winner' if ticker in winners else 'laggard'
-                signals.append({
-                    'ticker': ticker,
-                    'action': 'BUY',
-                    'amount': None,  # Use available cash
-                    'reason': f'Mixed strategy {position_type} (return: {asset_returns[ticker]:.2f}%)'
-                })
-                self.current_positions.add(ticker)
-                self.record_trade(ticker, current_date)
+            # Check cooldown before buying
+            if self.is_in_cooldown(ticker, current_date, self.cooldown_days):
+                logger.debug(f"Skipping {ticker} - in cooldown")
+                continue
+            
+            position_type = 'winner' if ticker in winners else 'laggard'
+            signals.append({
+                'ticker': ticker,
+                'action': 'BUY',
+                'amount': None,  # Use available cash
+                'reason': f'Mixed strategy: {position_type} (return: {asset_returns[ticker]:.2f}%)'
+            })
+            self.current_positions.add(ticker)
+            self.record_trade(ticker, current_date)
+            logger.info(f"Signal to BUY {ticker} - {position_type} with {asset_returns[ticker]:.2f}% return")
         
+        logger.info(f"Generated {len(signals)} BUY signals for accumulation")
         return signals
 

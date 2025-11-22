@@ -92,15 +92,34 @@ class Portfolio:
             return None
         
         df = self.price_data[ticker]
-        date_str = date.strftime('%Y-%m-%d')
+        if df.empty:
+            return None
+        
+        date_pd = pd.to_datetime(date)
+        
+        # Normalize timezone - remove timezone info for comparison
+        if df.index.tz is not None:
+            df_index = df.index.tz_localize(None)
+        else:
+            df_index = df.index
+        
+        # Normalize input date (remove time, keep just date)
+        date_pd_normalized = pd.to_datetime(date_pd.date())
         
         # Find closest available date (forward fill)
-        available_dates = df.index[df.index <= pd.to_datetime(date)]
+        available_dates = df_index[df_index <= date_pd_normalized]
         if len(available_dates) == 0:
             return None
         
         closest_date = available_dates[-1]
-        return df.loc[closest_date, 'adj_close']
+        # Use original index if it has timezone
+        if df.index.tz is not None:
+            closest_date_original = df.index[df_index <= date_pd_normalized][-1]
+        else:
+            closest_date_original = closest_date
+        
+        price = df.loc[closest_date_original, 'adj_close']
+        return float(price) if price is not None and not pd.isna(price) else None
     
     def buy(
         self, 

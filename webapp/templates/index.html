@@ -81,6 +81,26 @@ execution: first_day_only
                         </div>
                     </div>
                     
+                    <div class="border-t pt-4">
+                        <h3 class="text-lg font-semibold mb-3">Recurring Reinvestment (Optional)</h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Reinvestment Amount</label>
+                                <input type="number" id="reinvestment-amount" value="0" min="0" step="0.01" class="w-full border border-gray-300 rounded-md p-2" placeholder="e.g., 100">
+                                <p class="text-xs text-gray-500 mt-1">Amount to invest on each rebalance period</p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Reinvestment Frequency</label>
+                                <select id="reinvestment-frequency" class="w-full border border-gray-300 rounded-md p-2">
+                                    <option value="">None (lump sum only)</option>
+                                    <option value="weekly">Weekly</option>
+                                    <option value="monthly">Monthly</option>
+                                </select>
+                                <p class="text-xs text-gray-500 mt-1">How often to reinvest (should match strategy rebalance frequency)</p>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <div class="flex space-x-4">
                         <button type="button" onclick="validateStrategy()" class="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600">
                             Validate Strategy
@@ -197,12 +217,18 @@ execution: first_day_only
         
         <!-- Results Tab -->
         <div id="tab-content-results" class="tab-content hidden">
-            <div class="bg-white rounded-lg shadow-md p-6">
+            <!-- Runs List View -->
+            <div id="runs-list-container" class="bg-white rounded-lg shadow-md p-6">
                 <h2 class="text-2xl font-bold mb-4">Backtest Results</h2>
                 
                 <div id="runs-list" class="space-y-4">
                     <p class="text-gray-600">Loading runs...</p>
                 </div>
+            </div>
+            
+            <!-- Detailed Run View (hidden by default) -->
+            <div id="run-details-container" class="hidden">
+                <!-- Content will be inserted here by showRunDetails() -->
             </div>
         </div>
         
@@ -256,6 +282,11 @@ execution: first_day_only
             document.getElementById(`tab-${tabName}`).classList.add('text-blue-600', 'border-b-2', 'border-blue-600');
             
             if (tabName === 'results') {
+                // Show runs list by default, hide details
+                const listContainer = document.getElementById('runs-list-container');
+                const detailsContainer = document.getElementById('run-details-container');
+                if (listContainer) listContainer.classList.remove('hidden');
+                if (detailsContainer) detailsContainer.classList.add('hidden');
                 loadRuns();
             } else if (tabName === 'compare') {
                 loadRunsForCompare();
@@ -505,12 +536,19 @@ execution: first_day_only
         document.getElementById('backtest-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            const reinvestmentAmount = parseFloat(document.getElementById('reinvestment-amount').value) || 0;
+            const reinvestmentFreq = document.getElementById('reinvestment-frequency').value;
+            
             const data = {
                 strategy_yaml: document.getElementById('strategy-yaml').value,
                 start_date: document.getElementById('start-date').value,
                 end_date: document.getElementById('end-date').value,
                 initial_cash: parseFloat(document.getElementById('initial-cash').value),
-                run_name: document.getElementById('run-name').value || null
+                run_name: document.getElementById('run-name').value || null,
+                recurring_contribution: (reinvestmentAmount > 0 && reinvestmentFreq) ? {
+                    amount: reinvestmentAmount,
+                    frequency: reinvestmentFreq
+                } : null
             };
             
             try {
@@ -602,6 +640,18 @@ execution: first_day_only
             }, 1000);
         }
         
+        // Show runs list view
+        function showRunsList() {
+            const listContainer = document.getElementById('runs-list-container');
+            const detailsContainer = document.getElementById('run-details-container');
+            
+            if (listContainer) listContainer.classList.remove('hidden');
+            if (detailsContainer) detailsContainer.classList.add('hidden');
+            
+            // Reload runs list
+            loadRuns();
+        }
+        
         // Load runs
         async function loadRuns() {
             try {
@@ -612,6 +662,8 @@ execution: first_day_only
                     const runs = result.runs;
                     const container = document.getElementById('runs-list');
                     
+                    if (!container) return;
+                    
                     if (runs.length === 0) {
                         container.innerHTML = '<p class="text-gray-600">No runs yet. Run a backtest to see results here.</p>';
                         return;
@@ -621,7 +673,7 @@ execution: first_day_only
                         <div class="border border-gray-300 rounded-md p-4 hover:bg-gray-50">
                             <div class="flex justify-between items-center">
                                 <div>
-                                    <h3 class="font-semibold text-lg">${run.name}</h3>
+                                    <h3 class="font-semibold text-lg">${run.name || 'Unnamed Run'}</h3>
                                     <p class="text-sm text-gray-600">${run.strategy_name} | ${run.start_date} to ${run.end_date}</p>
                                 </div>
                                 <div class="flex space-x-2">
@@ -649,11 +701,315 @@ execution: first_day_only
                 
                 if (result.success) {
                     const run = result.run;
-                    // Create a modal or new page to show detailed results
-                    alert('Run details:\n' + JSON.stringify(run.metrics, null, 2));
+                    showRunDetails(run);
+                } else {
+                    alert('Error loading run: ' + (result.error || 'Unknown error'));
                 }
             } catch (error) {
                 alert('Error loading run: ' + error.message);
+            }
+        }
+        
+        // Show detailed run results page
+        function showRunDetails(run) {
+            // Switch to results tab
+            showTab('results');
+            
+            // Hide runs list, show details container
+            const listContainer = document.getElementById('runs-list-container');
+            const detailsContainer = document.getElementById('run-details-container');
+            
+            if (listContainer) listContainer.classList.add('hidden');
+            if (detailsContainer) detailsContainer.classList.remove('hidden');
+            
+            const container = detailsContainer;
+            
+            // Format metrics for display
+            const metrics = run.metrics || {};
+            const equityCurve = run.equity_curve || [];
+            const trades = run.trades || [];
+            const qqqEquityCurve = run.qqq_equity_curve || [];
+            const qqqMetrics = run.qqq_metrics || {};
+            
+            // Calculate some display values
+            const totalReturn = metrics.total_return || 0;
+            const qqqReturn = metrics.qqq_baseline_return || qqqMetrics.total_return || 0;
+            const beatQQQ = metrics.beat_qqq || (totalReturn > qqqReturn);
+            
+            let html = `
+                <div class="mb-4">
+                    <button onclick="showRunsList()" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">
+                        ← Back to Results List
+                    </button>
+                </div>
+                
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h2 class="text-3xl font-bold">${run.name || 'Unnamed Run'}</h2>
+                            <p class="text-gray-600 mt-1">${run.strategy_name} | ${run.start_date} to ${run.end_date}</p>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-2xl font-bold ${totalReturn >= 0 ? 'text-green-600' : 'text-red-600'}">
+                                ${totalReturn.toFixed(2)}%
+                            </div>
+                            <div class="text-sm text-gray-600">Total Return</div>
+                            ${beatQQQ ? 
+                                '<div class="mt-2 px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-semibold">✓ Beat QQQ</div>' :
+                                '<div class="mt-2 px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-semibold">✗ Underperformed QQQ</div>'
+                            }
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Key Metrics Table -->
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h3 class="text-xl font-bold mb-4">Performance Metrics</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="border rounded-lg p-4">
+                            <div class="text-sm text-gray-600">CAGR</div>
+                            <div class="text-2xl font-bold">${(metrics.cagr || 0).toFixed(2)}%</div>
+                            <div class="text-xs text-gray-500 mt-1">QQQ: ${(qqqMetrics.cagr || metrics.qqq_baseline_cagr || 0).toFixed(2)}%</div>
+                        </div>
+                        <div class="border rounded-lg p-4">
+                            <div class="text-sm text-gray-600">Sharpe Ratio</div>
+                            <div class="text-2xl font-bold">${(metrics.sharpe_ratio || 0).toFixed(2)}</div>
+                            <div class="text-xs text-gray-500 mt-1">QQQ: ${(qqqMetrics.sharpe_ratio || 0).toFixed(2)}</div>
+                        </div>
+                        <div class="border rounded-lg p-4">
+                            <div class="text-sm text-gray-600">Max Drawdown</div>
+                            <div class="text-2xl font-bold text-red-600">${(metrics.max_drawdown || 0).toFixed(2)}%</div>
+                            <div class="text-xs text-gray-500 mt-1">QQQ: ${(qqqMetrics.max_drawdown || 0).toFixed(2)}%</div>
+                        </div>
+                        <div class="border rounded-lg p-4">
+                            <div class="text-sm text-gray-600">Total Trades</div>
+                            <div class="text-2xl font-bold">${metrics.total_trades || 0}</div>
+                            <div class="text-xs text-gray-500 mt-1">Win Rate: ${(metrics.win_rate || 0).toFixed(1)}%</div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                        <div class="border rounded-lg p-4">
+                            <div class="text-sm text-gray-600">Sortino Ratio</div>
+                            <div class="text-xl font-bold">${(metrics.sortino_ratio || 0).toFixed(2)}</div>
+                        </div>
+                        <div class="border rounded-lg p-4">
+                            <div class="text-sm text-gray-600">Volatility</div>
+                            <div class="text-xl font-bold">${(metrics.volatility || 0).toFixed(2)}%</div>
+                        </div>
+                        <div class="border rounded-lg p-4">
+                            <div class="text-sm text-gray-600">Profit Factor</div>
+                            <div class="text-xl font-bold">${(metrics.profit_factor || 0).toFixed(2)}</div>
+                        </div>
+                        <div class="border rounded-lg p-4">
+                            <div class="text-sm text-gray-600">Time in Negative</div>
+                            <div class="text-xl font-bold">${(metrics.time_in_negative || 0).toFixed(1)}%</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Equity Curve Chart -->
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h3 class="text-xl font-bold mb-4">Equity Curve vs QQQ</h3>
+                    <div id="equity-chart" style="height: 400px;"></div>
+                </div>
+                
+                <!-- Drawdown Chart -->
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h3 class="text-xl font-bold mb-4">Drawdown</h3>
+                    <div id="drawdown-chart" style="height: 300px;"></div>
+                </div>
+                
+                <!-- Trades Table -->
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h3 class="text-xl font-bold mb-4">Trades (${trades.length})</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full border-collapse border border-gray-300 text-sm">
+                            <thead>
+                                <tr class="bg-gray-100">
+                                    <th class="border p-2 text-left">Date</th>
+                                    <th class="border p-2 text-left">Ticker</th>
+                                    <th class="border p-2 text-left">Action</th>
+                                    <th class="border p-2 text-right">Shares</th>
+                                    <th class="border p-2 text-right">Price</th>
+                                    <th class="border p-2 text-right">Value</th>
+                                    <th class="border p-2 text-left">Reason</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${trades.slice(0, 100).map(trade => `
+                                    <tr>
+                                        <td class="border p-2">${trade.date || ''}</td>
+                                        <td class="border p-2 font-mono">${trade.ticker || ''}</td>
+                                        <td class="border p-2">
+                                            <span class="px-2 py-1 rounded ${trade.action === 'BUY' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                                                ${trade.action || ''}
+                                            </span>
+                                        </td>
+                                        <td class="border p-2 text-right">${(trade.shares || 0).toFixed(4)}</td>
+                                        <td class="border p-2 text-right">$${(trade.price || 0).toFixed(2)}</td>
+                                        <td class="border p-2 text-right">$${(trade.value || 0).toFixed(2)}</td>
+                                        <td class="border p-2 text-xs text-gray-600">${trade.reason || ''}</td>
+                                    </tr>
+                                `).join('')}
+                                ${trades.length > 100 ? `<tr><td colspan="7" class="border p-2 text-center text-gray-600">... and ${trades.length - 100} more trades</td></tr>` : ''}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+            
+            // Draw equity curve chart
+            if (equityCurve.length > 0) {
+                // Handle both array of objects and array of arrays
+                const dates = equityCurve.map(e => {
+                    if (typeof e === 'object' && e !== null) {
+                        return e.date || e.Date || (e.index ? e.index : '');
+                    }
+                    return '';
+                }).filter(d => d);
+                
+                const strategyValues = equityCurve.map(e => {
+                    if (typeof e === 'object' && e !== null) {
+                        return e.total_value || e.TotalValue || e.totalValue || 0;
+                    }
+                    return 0;
+                });
+                
+                const traces = [{
+                    x: dates,
+                    y: strategyValues,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: 'Strategy',
+                    line: { color: '#3B82F6', width: 2 }
+                }];
+                
+                // Add QQQ baseline if available
+                // Check both direct qqq_equity_curve and metadata.qqq_equity_curve
+                const qqqData = run.qqq_equity_curve || run.metadata?.qqq_equity_curve || [];
+                
+                if (qqqData && Array.isArray(qqqData) && qqqData.length > 0) {
+                    console.log('QQQ data found:', qqqData.length, 'points');
+                    const qqqDates = qqqData.map(e => {
+                        if (typeof e === 'object' && e !== null) {
+                            return e.date || e.Date || (e.index ? e.index : '');
+                        }
+                        return '';
+                    }).filter(d => d);
+                    
+                    const qqqValues = qqqData.map(e => {
+                        if (typeof e === 'object' && e !== null) {
+                            return e.total_value || e.TotalValue || e.totalValue || 0;
+                        }
+                        return 0;
+                    });
+                    
+                    if (qqqDates.length > 0 && qqqValues.length > 0) {
+                        console.log('Adding QQQ trace with', qqqDates.length, 'points');
+                        traces.push({
+                            x: qqqDates,
+                            y: qqqValues,
+                            type: 'scatter',
+                            mode: 'lines',
+                            name: 'QQQ Baseline',
+                            line: { color: '#10B981', width: 2, dash: 'dash' }
+                        });
+                    } else {
+                        console.log('QQQ data exists but dates/values are empty');
+                    }
+                } else {
+                    console.log('No QQQ data found in run object');
+                }
+                
+                Plotly.newPlot('equity-chart', traces, {
+                    title: 'Portfolio Value Over Time',
+                    xaxis: { title: 'Date' },
+                    yaxis: { title: 'Portfolio Value ($)' },
+                    hovermode: 'x unified',
+                    showlegend: true,
+                    margin: { l: 60, r: 20, t: 40, b: 60 }
+                });
+            }
+            
+            // Draw drawdown chart
+            const underwater = run.metadata?.underwater_plot || run.underwater_plot;
+            if (equityCurve.length > 0 && underwater && Array.isArray(underwater) && underwater.length > 0) {
+                const drawdownDates = underwater.map(u => {
+                    if (typeof u === 'object' && u !== null) {
+                        return u.date || u.Date || (u.index ? u.index : '');
+                    }
+                    return '';
+                }).filter(d => d);
+                
+                const drawdownValues = underwater.map(u => {
+                    if (typeof u === 'object' && u !== null) {
+                        return u.drawdown || u.Drawdown || 0;
+                    }
+                    return 0;
+                });
+                
+                if (drawdownDates.length > 0) {
+                    Plotly.newPlot('drawdown-chart', [{
+                        x: drawdownDates,
+                        y: drawdownValues,
+                        type: 'scatter',
+                        mode: 'lines',
+                        fill: 'tozeroy',
+                        fillcolor: 'rgba(239, 68, 68, 0.3)',
+                        line: { color: '#EF4444', width: 2 },
+                        name: 'Drawdown'
+                    }], {
+                        title: 'Underwater Plot (Drawdown)',
+                        xaxis: { title: 'Date' },
+                        yaxis: { title: 'Drawdown (%)' },
+                        hovermode: 'x unified',
+                        margin: { l: 60, r: 20, t: 40, b: 60 }
+                    });
+                }
+            } else if (equityCurve.length > 0) {
+                // Calculate drawdown from equity curve if underwater plot not available
+                const dates = equityCurve.map(e => {
+                    if (typeof e === 'object' && e !== null) {
+                        return e.date || e.Date || (e.index ? e.index : '');
+                    }
+                    return '';
+                }).filter(d => d);
+                
+                const values = equityCurve.map(e => {
+                    if (typeof e === 'object' && e !== null) {
+                        return e.total_value || e.TotalValue || e.totalValue || 0;
+                    }
+                    return 0;
+                });
+                
+                // Calculate running max and drawdown
+                let runningMax = values[0];
+                const drawdowns = values.map((val, idx) => {
+                    if (val > runningMax) runningMax = val;
+                    return ((val - runningMax) / runningMax) * 100;
+                });
+                
+                if (dates.length > 0) {
+                    Plotly.newPlot('drawdown-chart', [{
+                        x: dates,
+                        y: drawdowns,
+                        type: 'scatter',
+                        mode: 'lines',
+                        fill: 'tozeroy',
+                        fillcolor: 'rgba(239, 68, 68, 0.3)',
+                        line: { color: '#EF4444', width: 2 },
+                        name: 'Drawdown'
+                    }], {
+                        title: 'Underwater Plot (Drawdown)',
+                        xaxis: { title: 'Date' },
+                        yaxis: { title: 'Drawdown (%)' },
+                        hovermode: 'x unified',
+                        margin: { l: 60, r: 20, t: 40, b: 60 }
+                    });
+                }
             }
         }
         
@@ -666,7 +1022,13 @@ execution: first_day_only
                 const result = await response.json();
                 
                 if (result.success) {
-                    loadRuns();
+                    // If we're viewing details, go back to list
+                    const detailsContainer = document.getElementById('run-details-container');
+                    if (detailsContainer && !detailsContainer.classList.contains('hidden')) {
+                        showRunsList();
+                    } else {
+                        loadRuns();
+                    }
                 } else {
                     alert('Error: ' + result.error);
                 }

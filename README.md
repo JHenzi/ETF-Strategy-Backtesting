@@ -146,14 +146,133 @@ The system is designed to be:
 - **Reproducible**: Deterministic results given same inputs
 - **User-friendly**: Web interface for non-technical users
 
+## Recent Changes (November 2025)
+
+### New Features
+- **Strategy Builder UI**: Guided form to create YAML strategies without manual editing
+- **Ticker Validation & Caching**: Automatic validation and caching of ticker symbols with company names
+- **Ticker Library**: Browse all discovered/validated tickers
+- **Enhanced Logging**: Detailed logging for debugging backtest execution
+
+### Bug Fixes
+- Fixed rebalance logic to use trading days instead of calendar days
+- Fixed order execution timing for rebalancing strategies (same-day execution)
+- Fixed position tracking synchronization between strategy and portfolio
+- Fixed DataFrame JSON serialization in API responses
+- Fixed SQLite type conversion for pandas/numpy types
+
+### Known Issues
+- **Zero Results Bug**: Some strategies (particularly rebalancing strategies) may return all-zero metrics. See troubleshooting section below.
+
+## Troubleshooting
+
+### Problem: Backtest Returns All Zeros
+
+If your backtest shows all metrics as 0 (total_trades: 0, total_return: 0, etc.), this indicates trades aren't being executed.
+
+#### Step 1: Check the Logs
+Look for these log messages in the console:
+- `"Generated X signals"` - Strategy is generating buy/sell signals
+- `"Executing X orders"` - Orders are being executed
+- `"Bought X shares"` - Trades are completing
+- `"Portfolio value: $X"` - Portfolio is being tracked
+
+If these messages are missing, the issue is in signal generation or execution.
+
+#### Step 2: Test with Buy & Hold
+Try the simplest strategy first:
+```yaml
+name: buy_and_hold
+universe:
+  - SPY
+position_sizing: equal_weight
+execution: first_day_only
+```
+
+This should always work and show non-zero returns if the engine is functioning.
+
+#### Step 3: Verify Data Availability
+- Check that ticker symbols are valid (use the "Validate All" button in Strategy Builder)
+- Ensure date range has trading days (avoid weekends/holidays)
+- Verify price data exists for your date range
+
+#### Step 4: Check Rebalance Logic
+For rebalancing strategies:
+- Ensure `rebalance_frequency` is set (weekly, monthly, etc.)
+- Check that the date range spans multiple rebalance periods
+- Verify `lookback_days` is reasonable (not longer than date range)
+
+#### Step 5: Enable Debug Logging
+The engine logs key events. Check the console output for:
+- Rebalance decisions
+- Signal generation
+- Order execution
+- Portfolio updates
+
+### Common Issues
+
+**Issue**: "No data for ticker X"
+- **Solution**: Validate ticker first, or use a different ticker
+
+**Issue**: "Strategy validation failed"
+- **Solution**: Check YAML syntax and required parameters for your strategy type
+
+**Issue**: "Invalid tickers" error
+- **Solution**: Use the ticker validation feature before running backtest
+
+**Issue**: Backtest completes instantly with no trades
+- **Solution**: Check that rebalance_frequency is set and date range is long enough
+
+## How It Works
+
+### Backtest Execution Flow
+
+1. **Strategy Loading**: YAML is parsed and validated
+2. **Ticker Validation**: All tickers are validated and cached
+3. **Data Fetching**: Historical price data is fetched (or loaded from cache)
+4. **Simulation Loop**: For each trading day:
+   - Check if rebalancing is needed
+   - Generate buy/sell signals
+   - Place orders
+   - Execute orders (on rebalance days, execute immediately)
+   - Update portfolio (cash, positions)
+   - Take daily snapshot (for equity curve)
+5. **Metrics Calculation**: Compute performance metrics from equity curve
+6. **Results Storage**: Save to SQLite database
+
+### Portfolio Simulation
+
+The engine simulates a real portfolio:
+- **Cash**: Starting cash, reduced by buys, increased by sells
+- **Positions**: Dictionary of ticker → shares held
+- **Daily Value**: Cash + (shares × current price) for each position
+- **Equity Curve**: Portfolio value over time (for metrics calculation)
+
+### Rebalancing Logic
+
+For weekly rebalancing:
+- Counts **trading days** since last rebalance (not calendar days)
+- Rebalances when 5+ trading days have passed OR 7+ calendar days
+- Executes all trades on the same day (immediate execution)
+- Splits available cash equally across buy orders
+
+### Baseline Comparison
+
+**TODO**: Currently not implemented. Planned feature:
+- Automatically fetch QQQ data
+- Calculate QQQ performance in parallel
+- Include relative performance metrics
+- Show comparison charts
+
 ## Future Enhancements
 
-- Additional built-in strategies (RSI, SMA crossover, etc.)
-- More sophisticated position sizing
-- Commission and slippage modeling
-- Live mode with daily price updates
-- Export results to CSV/Excel
-- More detailed visualizations
+- **Baseline Comparison**: Automatic QQQ (or custom benchmark) comparison
+- **Additional Strategies**: RSI, SMA crossover, Relative Strength, Buy the Dip
+- **More Sophisticated Position Sizing**: Kelly Criterion, risk-based sizing
+- **Commission & Slippage Modeling**: Realistic trading costs
+- **Live Mode**: Daily price updates and simulated live portfolio
+- **Export Results**: CSV/Excel export for trades and equity curve
+- **Enhanced Visualizations**: Plotly charts for equity curves, drawdowns, rolling metrics
 
 ## License
 

@@ -45,28 +45,24 @@ class MomentumWinnerStrategy(BaseStrategy):
         # Select top N winners
         winners = [ticker for ticker, _ in sorted_assets[:self.winner_count]]
         
-        # Sell positions not in winners
-        for ticker in list(self.current_positions):
-            if ticker not in winners:
-                signals.append({
-                    'ticker': ticker,
-                    'action': 'SELL',
-                    'shares': None,  # Sell all
-                    'reason': 'Not in winner list'
-                })
-                self.current_positions.discard(ticker)
-        
-        # Buy winners
+        # Accumulation strategy: Only buy winners, never sell
+        # Buy winners (whether we already hold them or not - accumulate positions)
         for ticker in winners:
-            if ticker not in self.current_positions:
-                signals.append({
-                    'ticker': ticker,
-                    'action': 'BUY',
-                    'amount': None,  # Use available cash
-                    'reason': f'Momentum winner (return: {asset_returns[ticker]:.2f}%)'
-                })
-                self.current_positions.add(ticker)
-                self.record_trade(ticker, current_date)
+            # Check cooldown before buying
+            if self.is_in_cooldown(ticker, current_date, self.cooldown_days):
+                logger.debug(f"Skipping {ticker} - in cooldown")
+                continue
+            
+            signals.append({
+                'ticker': ticker,
+                'action': 'BUY',
+                'amount': None,  # Use available cash
+                'reason': f'Momentum winner (return: {asset_returns[ticker]:.2f}%)'
+            })
+            self.current_positions.add(ticker)
+            self.record_trade(ticker, current_date)
+            logger.info(f"Signal to BUY {ticker} - momentum winner with {asset_returns[ticker]:.2f}% return")
         
+        logger.info(f"Generated {len(signals)} BUY signals for accumulation")
         return signals
 

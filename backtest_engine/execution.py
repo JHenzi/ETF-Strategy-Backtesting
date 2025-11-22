@@ -133,9 +133,10 @@ class RebalanceScheduler:
         end_date: datetime,
         frequency: str,
         amount: float
-    ) -> Dict[datetime, float]:
+    ) -> Dict[pd.Timestamp, float]:
         """
         Get dates when recurring contributions should be made.
+        Uses trading days to align with rebalancing schedule.
         
         Args:
             start_date: Start of period
@@ -144,27 +145,58 @@ class RebalanceScheduler:
             amount: Contribution amount
             
         Returns:
-            Dictionary mapping dates to contribution amounts
+            Dictionary mapping trading dates to contribution amounts
         """
+        import pandas as pd
+        
         contributions = {}
-        current = start_date
+        
+        # Create a date range of trading days
+        trading_days = pd.bdate_range(start=start_date, end=end_date)
         
         if frequency == "weekly":
+            # Find first Monday (or first trading day if Monday not available)
+            current = start_date
             while current <= end_date:
-                contributions[current] = amount
-                current += timedelta(days=7)
+                # Find next Monday (or first trading day of week)
+                days_until_monday = (7 - current.weekday()) % 7
+                if days_until_monday == 0 and current.weekday() != 0:
+                    days_until_monday = 7
+                next_date = current + timedelta(days=days_until_monday)
+                
+                # Find closest trading day
+                available_days = trading_days[trading_days >= pd.Timestamp(next_date)]
+                if len(available_days) > 0:
+                    contribution_date = available_days[0]
+                    if contribution_date <= pd.Timestamp(end_date):
+                        contributions[contribution_date] = amount
+                    current = contribution_date + timedelta(days=1)
+                else:
+                    break
+                    
         elif frequency == "monthly":
+            # First trading day of each month
+            current = start_date
             while current <= end_date:
-                contributions[current] = amount
+                # First day of current month
+                first_of_month = current.replace(day=1)
+                # Find first trading day of that month
+                available_days = trading_days[trading_days >= pd.Timestamp(first_of_month)]
+                if len(available_days) > 0:
+                    contribution_date = available_days[0]
+                    if contribution_date <= pd.Timestamp(end_date) and contribution_date not in contributions:
+                        contributions[contribution_date] = amount
+                
                 # Move to next month
                 if current.month == 12:
-                    current = current.replace(year=current.year + 1, month=1)
+                    current = current.replace(year=current.year + 1, month=1, day=1)
                 else:
-                    current = current.replace(month=current.month + 1)
+                    current = current.replace(month=current.month + 1, day=1)
+                    
         elif frequency == "daily":
-            while current <= end_date:
-                contributions[current] = amount
-                current += timedelta(days=1)
+            # Every trading day
+            for day in trading_days:
+                contributions[day] = amount
         
         return contributions
 

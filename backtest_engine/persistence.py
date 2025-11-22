@@ -178,11 +178,14 @@ class BacktestPersistence:
             
             # Save metrics
             metrics = results.get('metrics', {})
+            logger.info(f"Saving {len(metrics)} metrics for run {run_id}")
             for metric_name, metric_value in metrics.items():
+                converted_value = _convert_to_sqlite_type(metric_value)
                 cursor.execute("""
                     INSERT INTO metrics (run_id, metric_name, metric_value)
                     VALUES (?, ?, ?)
-                """, (run_id, metric_name, _convert_to_sqlite_type(metric_value)))
+                """, (run_id, metric_name, converted_value))
+                logger.debug(f"Saved metric: {metric_name} = {converted_value}")
             
             # Save trades
             trades = results.get('trades', pd.DataFrame())
@@ -218,12 +221,14 @@ class BacktestPersistence:
                         _convert_to_sqlite_type(row.get('equity_curve_pct', None))
                     ))
             
-            # Save metadata
+            # Save metadata (including QQQ data)
             metadata = {
                 'rolling_metrics_30': results.get('rolling_metrics_30', {}),
                 'rolling_metrics_60': results.get('rolling_metrics_60', {}),
                 'rolling_metrics_90': results.get('rolling_metrics_90', {}),
-                'underwater_plot': results.get('underwater_plot', {})
+                'underwater_plot': results.get('underwater_plot', {}),
+                'qqq_equity_curve': results.get('qqq_equity_curve', pd.DataFrame()).to_dict('records') if isinstance(results.get('qqq_equity_curve'), pd.DataFrame) else [],
+                'qqq_metrics': results.get('qqq_metrics', {})
             }
             cursor.execute("""
                 INSERT INTO run_metadata (run_id, metadata_json)
@@ -308,6 +313,16 @@ class BacktestPersistence:
         metadata = {}
         if not metadata_df.empty:
             metadata = json.loads(metadata_df.iloc[0]['metadata_json'])
+            # Convert QQQ equity curve back to DataFrame format if present
+            if 'qqq_equity_curve' in metadata and isinstance(metadata['qqq_equity_curve'], list):
+                if metadata['qqq_equity_curve']:
+                    qqq_df = pd.DataFrame(metadata['qqq_equity_curve'])
+                    if 'date' in qqq_df.columns:
+                        qqq_df['date'] = pd.to_datetime(qqq_df['date'])
+                        qqq_df.set_index('date', inplace=True)
+                    metadata['qqq_equity_curve'] = qqq_df
+                else:
+                    metadata['qqq_equity_curve'] = pd.DataFrame()
         
         conn.close()
         

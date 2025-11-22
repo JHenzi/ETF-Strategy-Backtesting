@@ -36,6 +36,9 @@ class DataFetcher:
                 close REAL,
                 adj_close REAL,
                 volume INTEGER,
+                dividends REAL,
+                stock_splits REAL,
+                capital_gains REAL,
                 PRIMARY KEY (ticker, date)
             )
         """)
@@ -109,15 +112,27 @@ class DataFetcher:
             
             # Standardize column names
             df.columns = [col.lower().replace(' ', '_') for col in df.columns]
+            # Keep date as index (don't reset)
             df.index.name = 'date'
-            df = df.reset_index()
             
-            # Store in cache
-            self._store_in_cache(ticker, df)
+            # yfinance no longer provides 'Adj Close' - use 'Close' as adj_close
+            if 'adj_close' not in df.columns:
+                if 'close' in df.columns:
+                    df['adj_close'] = df['close']
+                    logger.debug(f"Using 'close' as 'adj_close' for {ticker} (yfinance doesn't provide Adj Close)")
+                else:
+                    raise ValueError(f"No 'close' or 'adj_close' column for {ticker}")
             
-            # Get full range from cache (may include previously cached data)
-            result = self._get_cached_data(ticker, start_date, end_date)
-            return result
+            # Remove timezone info for consistency
+            if df.index.tz is not None:
+                df.index = df.index.tz_localize(None)
+            
+            # Store in cache (reset index for storage)
+            df_for_cache = df.reset_index()
+            self._store_in_cache(ticker, df_for_cache)
+            
+            # Return DataFrame with date as index (timezone-naive)
+            return df
             
         except Exception as e:
             logger.error(f"Error fetching data for {ticker}: {e}")
@@ -132,26 +147,50 @@ class DataFetcher:
         """Retrieve cached data for a ticker and date range."""
         conn = sqlite3.connect(self.cache_db_path)
         
-        query = """
-            SELECT date, open, high, low, close, adj_close, volume
-            FROM price_data
-            WHERE ticker = ? AND date >= ? AND date <= ?
-            ORDER BY date
-        """
-        
-        df = pd.read_sql_query(
-            query, 
-            conn, 
-            params=(ticker, start_date, end_date),
-            parse_dates=['date']
-        )
-        
-        conn.close()
+        try:
+            # Check if new columns exist, use backward-compatible query
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(price_data)")
+            columns = [row[1] for row in cursor.fetchall()]
+            
+            # Build query based on available columns
+            base_cols = ['date', 'open', 'high', 'low', 'close', 'adj_close', 'volume']
+            optional_cols = ['dividends', 'stock_splits', 'capital_gains']
+            select_cols = base_cols + [col for col in optional_cols if col in columns]
+            
+            query = f"""
+                SELECT {', '.join(select_cols)}
+                FROM price_data
+                WHERE ticker = ? AND date >= ? AND date <= ?
+                ORDER BY date
+            """
+            
+            df = pd.read_sql_query(
+                query, 
+                conn, 
+                params=(ticker, start_date, end_date),
+                parse_dates=['date']
+            )
+        finally:
+            conn.close()
         
         if df.empty:
             return None
         
+        # Set date as index and ensure it's timezone-naive
         df.set_index('date', inplace=True)
+        if df.index.tz is not None:
+            df.index = df.index.tz_localize(None)
+        
+        # If adj_close is missing but close exists, use close as adj_close
+        # (yfinance no longer provides Adj Close column)
+        if 'adj_close' not in df.columns:
+            if 'close' in df.columns:
+                df['adj_close'] = df['close']
+                logger.debug(f"Using 'close' as 'adj_close' for {ticker} (from cache)")
+            else:
+                logger.warning(f"No 'close' or 'adj_close' column for {ticker} in cache")
+        
         return df
     
     def _store_in_cache(self, ticker: str, df: pd.DataFrame):
@@ -159,27 +198,58 @@ class DataFetcher:
         conn = sqlite3.connect(self.cache_db_path)
         cursor = conn.cursor()
         
+        # Check which columns exist in the table
+        cursor.execute("PRAGMA table_info(price_data)")
+        table_columns = [row[1] for row in cursor.fetchall()]
+        
         ticker = ticker.upper()
         
         for _, row in df.iterrows():
             date = row['date']
             if pd.isna(date):
                 continue
+            
+            # Handle both index-based (when date is index) and column-based (when date is column)
+            if 'date' in row:
+                date_val = date
+            else:
+                date_val = row.name if hasattr(row, 'name') else date
                 
-            cursor.execute("""
-                INSERT OR REPLACE INTO price_data 
-                (ticker, date, open, high, low, close, adj_close, volume)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                ticker,
-                date.strftime('%Y-%m-%d'),
-                row.get('open'),
-                row.get('high'),
-                row.get('low'),
-                row.get('close'),
-                row.get('adj_close'),
-                int(row.get('volume', 0)) if pd.notna(row.get('volume')) else None
-            ))
+            # Get adj_close - use close if adj_close doesn't exist (yfinance no longer provides it)
+            adj_close = row.get('adj_close')
+            if adj_close is None or pd.isna(adj_close):
+                adj_close = row.get('close')
+            
+            # Build insert statement based on available columns
+            base_cols = ['ticker', 'date', 'open', 'high', 'low', 'close', 'adj_close', 'volume']
+            optional_cols = ['dividends', 'stock_splits', 'capital_gains']
+            insert_cols = base_cols + [col for col in optional_cols if col in table_columns]
+            placeholders = ', '.join(['?' for _ in insert_cols])
+            
+            # Build values tuple
+            values = []
+            col_map = {
+                'ticker': ticker,
+                'date': pd.to_datetime(date_val).strftime('%Y-%m-%d') if not isinstance(date_val, str) else date_val,
+                'open': row.get('open'),
+                'high': row.get('high'),
+                'low': row.get('low'),
+                'close': row.get('close'),
+                'adj_close': adj_close,
+                'volume': int(row.get('volume', 0)) if pd.notna(row.get('volume')) else None,
+                'dividends': row.get('dividends', 0) or 0,
+                'stock_splits': row.get('stock_splits', 0) or 0,
+                'capital_gains': row.get('capital_gains', 0) or 0
+            }
+            
+            for col in insert_cols:
+                values.append(col_map[col])
+            
+            query = f"""
+                INSERT OR REPLACE INTO price_data ({', '.join(insert_cols)})
+                VALUES ({placeholders})
+            """
+            cursor.execute(query, tuple(values))
         
         # Update fetch metadata
         cursor.execute("""

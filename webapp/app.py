@@ -98,11 +98,23 @@ def get_run(run_id):
                         else:
                             metadata[key] = []
         
+        # Extract QQQ data from metadata for easier access
+        if 'metadata' in run_data and isinstance(run_data['metadata'], dict):
+            if 'qqq_equity_curve' in run_data['metadata']:
+                run_data['qqq_equity_curve'] = run_data['metadata']['qqq_equity_curve']
+            if 'qqq_metrics' in run_data['metadata']:
+                run_data['qqq_metrics'] = run_data['metadata']['qqq_metrics']
+        
         # Convert run_info Series/DataFrame if needed
         if 'run_info' in run_data:
             run_info = run_data['run_info']
             if isinstance(run_info, pd.Series):
                 run_data['run_info'] = run_info.to_dict()
+            # Flatten run_info into main run object for easier access
+            if isinstance(run_info, dict):
+                for key, value in run_info.items():
+                    if key not in run_data:  # Don't overwrite existing keys
+                        run_data[key] = value
         
         return jsonify({'success': True, 'run': run_data})
     except Exception as e:
@@ -236,6 +248,17 @@ def _run_backtest_job(job_id, strategy_yaml, start_date, end_date, initial_cash,
             execution_when='next_open'
         )
         
+        # Debug: Log results before saving
+        logger.info(f"Backtest results keys: {list(results.keys())}")
+        if 'metrics' in results:
+            logger.info(f"Metrics before save: {results['metrics']}")
+        if 'trades' in results:
+            trades_df = results['trades']
+            logger.info(f"Trades DataFrame: {len(trades_df)} rows, columns: {list(trades_df.columns) if hasattr(trades_df, 'columns') else 'N/A'}")
+        if 'equity_curve' in results:
+            equity_df = results['equity_curve']
+            logger.info(f"Equity curve DataFrame: {len(equity_df)} rows, columns: {list(equity_df.columns) if hasattr(equity_df, 'columns') else 'N/A'}")
+        
         with job_lock:
             if job_id in jobs:
                 jobs[job_id]['message'] = 'Saving results...'
@@ -248,6 +271,8 @@ def _run_backtest_job(job_id, strategy_yaml, start_date, end_date, initial_cash,
             strategy_name=strategy_name,
             run_name=run_name
         )
+        
+        logger.info(f"Saved backtest run {run_id}")
         
         with job_lock:
             if job_id in jobs:

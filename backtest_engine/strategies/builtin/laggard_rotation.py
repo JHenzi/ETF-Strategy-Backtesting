@@ -26,47 +26,52 @@ class LaggardRotationStrategy(BaseStrategy):
         if not should_rebalance:
             return signals
         
+        logger.info(f"Laggard Rotation: Rebalancing on {current_date}")
+        
         # Calculate returns for all assets
         asset_returns = {}
         for ticker in self.universe:
             if self.is_in_cooldown(ticker, current_date, self.cooldown_days):
+                logger.debug(f"Skipping {ticker} - in cooldown")
                 continue
             
             returns = self.get_returns(ticker, current_date, self.lookback_days)
             if returns is not None:
                 asset_returns[ticker] = returns
+                logger.debug(f"{ticker}: {returns:.2f}% return over {self.lookback_days} days")
+            else:
+                logger.warning(f"Could not calculate returns for {ticker}")
         
         if not asset_returns:
+            logger.warning("No asset returns calculated - cannot generate signals")
             return signals
         
         # Rank by returns (worst first)
         sorted_assets = sorted(asset_returns.items(), key=lambda x: x[1])
+        logger.info(f"Asset returns (worst to best): {[(t, f'{r:.2f}%') for t, r in sorted_assets]}")
         
         # Select bottom N laggards
         laggards = [ticker for ticker, _ in sorted_assets[:self.laggard_count]]
+        logger.info(f"Selected laggards: {laggards}")
         
-        # Sell positions not in laggards
-        for ticker in list(self.current_positions):
-            if ticker not in laggards:
-                signals.append({
-                    'ticker': ticker,
-                    'action': 'SELL',
-                    'shares': None,  # Sell all
-                    'reason': 'Not in laggard list'
-                })
-                self.current_positions.discard(ticker)
-        
-        # Buy laggards
+        # Accumulation strategy: Only buy laggards, never sell
+        # Buy laggards (whether we already hold them or not - accumulate positions)
         for ticker in laggards:
-            if ticker not in self.current_positions:
-                signals.append({
-                    'ticker': ticker,
-                    'action': 'BUY',
-                    'amount': None,  # Use available cash
-                    'reason': f'Laggard rotation (return: {asset_returns[ticker]:.2f}%)'
-                })
-                self.current_positions.add(ticker)
-                self.record_trade(ticker, current_date)
+            # Check cooldown before buying
+            if self.is_in_cooldown(ticker, current_date, self.cooldown_days):
+                logger.debug(f"Skipping {ticker} - in cooldown")
+                continue
+            
+            signals.append({
+                'ticker': ticker,
+                'action': 'BUY',
+                'amount': None,  # Will be split equally across all buys
+                'reason': f'Laggard rotation (return: {asset_returns[ticker]:.2f}%)'
+            })
+            self.current_positions.add(ticker)
+            self.record_trade(ticker, current_date)
+            logger.info(f"Signal to BUY {ticker} - laggard with {asset_returns[ticker]:.2f}% return")
         
+        logger.info(f"Generated {len(signals)} BUY signals for accumulation")
         return signals
 
