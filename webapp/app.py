@@ -140,14 +140,7 @@ def run_backtest():
         # Create job ID
         job_id = str(uuid.uuid4())
         
-        # Start async job
-        thread = threading.Thread(
-            target=_run_backtest_job,
-            args=(job_id, strategy_yaml, start_date, end_date, initial_cash, recurring_contribution, run_name)
-        )
-        thread.daemon = True
-        thread.start()
-        
+        # Initialize job BEFORE starting thread to avoid race condition
         with job_lock:
             jobs[job_id] = {
                 'status': 'running',
@@ -155,6 +148,14 @@ def run_backtest():
                 'message': 'Starting backtest...',
                 'created_at': datetime.now().isoformat()
             }
+        
+        # Start async job
+        thread = threading.Thread(
+            target=_run_backtest_job,
+            args=(job_id, strategy_yaml, start_date, end_date, initial_cash, recurring_contribution, run_name)
+        )
+        thread.daemon = True
+        thread.start()
         
         return jsonify({
             'success': True,
@@ -168,7 +169,15 @@ def run_backtest():
 def _run_backtest_job(job_id, strategy_yaml, start_date, end_date, initial_cash, recurring_contribution, run_name):
     """Run backtest in background thread."""
     try:
+        # Ensure job exists
         with job_lock:
+            if job_id not in jobs:
+                jobs[job_id] = {
+                    'status': 'running',
+                    'progress': 0,
+                    'message': 'Starting...',
+                    'created_at': datetime.now().isoformat()
+                }
             jobs[job_id]['message'] = 'Loading strategy...'
         
         # Create strategy
@@ -176,8 +185,9 @@ def _run_backtest_job(job_id, strategy_yaml, start_date, end_date, initial_cash,
         strategy_name = strategy.name
         
         with job_lock:
-            jobs[job_id]['message'] = 'Fetching market data...'
-            jobs[job_id]['progress'] = 20
+            if job_id in jobs:
+                jobs[job_id]['message'] = 'Fetching market data...'
+                jobs[job_id]['progress'] = 20
         
         # Run backtest
         results = engine.run_backtest(
@@ -190,8 +200,9 @@ def _run_backtest_job(job_id, strategy_yaml, start_date, end_date, initial_cash,
         )
         
         with job_lock:
-            jobs[job_id]['message'] = 'Saving results...'
-            jobs[job_id]['progress'] = 90
+            if job_id in jobs:
+                jobs[job_id]['message'] = 'Saving results...'
+                jobs[job_id]['progress'] = 90
         
         # Save to persistence
         run_id = persistence.save_run(
@@ -202,16 +213,30 @@ def _run_backtest_job(job_id, strategy_yaml, start_date, end_date, initial_cash,
         )
         
         with job_lock:
-            jobs[job_id]['status'] = 'completed'
-            jobs[job_id]['progress'] = 100
-            jobs[job_id]['message'] = 'Backtest completed'
-            jobs[job_id]['run_id'] = run_id
+            if job_id in jobs:
+                jobs[job_id]['status'] = 'completed'
+                jobs[job_id]['progress'] = 100
+                jobs[job_id]['message'] = 'Backtest completed'
+                jobs[job_id]['run_id'] = run_id
         
     except Exception as e:
-        logger.error(f"Error in backtest job {job_id}: {e}")
+        import traceback
+        error_msg = str(e)
+        error_traceback = traceback.format_exc()
+        logger.error(f"Error in backtest job {job_id}: {error_msg}\n{error_traceback}")
+        
         with job_lock:
-            jobs[job_id]['status'] = 'failed'
-            jobs[job_id]['message'] = f'Error: {str(e)}'
+            # Ensure job exists before updating
+            if job_id not in jobs:
+                jobs[job_id] = {
+                    'status': 'failed',
+                    'progress': 0,
+                    'message': f'Error: {error_msg}',
+                    'created_at': datetime.now().isoformat()
+                }
+            else:
+                jobs[job_id]['status'] = 'failed'
+                jobs[job_id]['message'] = f'Error: {error_msg}'
 
 
 @app.route('/api/jobs/<job_id>', methods=['GET'])

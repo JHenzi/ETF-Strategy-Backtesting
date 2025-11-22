@@ -1,8 +1,32 @@
 name: buy_and_hold
-description: "Simple buy and hold strategy - buy assets at start and hold"
 universe:
   - SPY
   - QQQ
+  - IWM
+  - DIA
+  - VTI
+  - VEU
+  - EFA
+  - EEM
+  - XLK
+  - XLC
+  - XLP
+  - XLF
+  - XLE
+  - XLI
+  - XLV
+  - XLB
+  - XLRE
+  - XLU
+  - BND
+  - TIP
+  - SHY
+  - DBC
+  - GLD
+  - TAN
+  - DRIV
+  - HYDR
+  - KGRN
+  - CNRG
 position_sizing: equal_weight
 execution: first_day_only
-

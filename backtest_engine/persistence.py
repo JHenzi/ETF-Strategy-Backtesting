@@ -4,12 +4,58 @@ Persistence layer for saving and loading backtest runs.
 import sqlite3
 import json
 import pandas as pd
+import numpy as np
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _convert_to_sqlite_type(value):
+    """Convert value to a SQLite-compatible type."""
+    if value is None:
+        return None
+    
+    # Handle NaN values
+    if pd.isna(value):
+        return None
+    
+    # Handle datetime/timestamp types
+    if isinstance(value, (pd.Timestamp, datetime)):
+        return value.strftime('%Y-%m-%d')
+    
+    # Handle numpy types (must check before native Python types)
+    if isinstance(value, np.generic):
+        if isinstance(value, (np.integer,)):
+            return int(value)
+        elif isinstance(value, (np.floating,)):
+            val = float(value)
+            return None if np.isnan(val) else val
+        elif isinstance(value, np.bool_):
+            return bool(value)
+        else:
+            return str(value)
+    
+    # Handle numpy arrays
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    
+    # Handle native Python types
+    if isinstance(value, bool):
+        return 1 if value else 0
+    elif isinstance(value, (float, int, str)):
+        # Check for NaN in float
+        if isinstance(value, float) and (value != value):  # NaN check
+            return None
+        return value
+    
+    # Try to convert to string as last resort
+    try:
+        return str(value)
+    except Exception:
+        return None
 
 
 class BacktestPersistence:
@@ -122,9 +168,9 @@ class BacktestPersistence:
                 run_name,
                 strategy_name,
                 strategy_yaml,
-                results.get('start_date'),
-                results.get('end_date'),
-                results.get('initial_cash'),
+                _convert_to_sqlite_type(results.get('start_date')),
+                _convert_to_sqlite_type(results.get('end_date')),
+                _convert_to_sqlite_type(results.get('initial_cash')),
                 'completed'
             ))
             
@@ -136,24 +182,25 @@ class BacktestPersistence:
                 cursor.execute("""
                     INSERT INTO metrics (run_id, metric_name, metric_value)
                     VALUES (?, ?, ?)
-                """, (run_id, metric_name, metric_value))
+                """, (run_id, metric_name, _convert_to_sqlite_type(metric_value)))
             
             # Save trades
             trades = results.get('trades', pd.DataFrame())
             if not trades.empty:
-                for _, trade in trades.iterrows():
+                for idx, trade in trades.iterrows():
+                    # Use .get() with None default, then convert
                     cursor.execute("""
                         INSERT INTO trades (run_id, date, ticker, action, shares, price, value, reason)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         run_id,
-                        trade.get('date'),
-                        trade.get('ticker'),
-                        trade.get('action'),
-                        trade.get('shares'),
-                        trade.get('price'),
-                        trade.get('value'),
-                        trade.get('reason')
+                        _convert_to_sqlite_type(trade.get('date', None)),
+                        _convert_to_sqlite_type(trade.get('ticker', None)),
+                        _convert_to_sqlite_type(trade.get('action', None)),
+                        _convert_to_sqlite_type(trade.get('shares', None)),
+                        _convert_to_sqlite_type(trade.get('price', None)),
+                        _convert_to_sqlite_type(trade.get('value', None)),
+                        _convert_to_sqlite_type(trade.get('reason', None))
                     ))
             
             # Save equity curve
@@ -165,10 +212,10 @@ class BacktestPersistence:
                         VALUES (?, ?, ?, ?, ?)
                     """, (
                         run_id,
-                        date,
-                        row.get('total_value'),
-                        row.get('cash'),
-                        row.get('equity_curve_pct')
+                        _convert_to_sqlite_type(date),
+                        _convert_to_sqlite_type(row.get('total_value', None)),
+                        _convert_to_sqlite_type(row.get('cash', None)),
+                        _convert_to_sqlite_type(row.get('equity_curve_pct', None))
                     ))
             
             # Save metadata
