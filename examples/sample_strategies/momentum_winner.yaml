@@ -1,0 +1,15 @@
+name: momentum_winner
+description: "Buy the best performing assets (momentum strategy)"
+universe:
+  - SPY
+  - QQQ
+  - VTI
+  - DIA
+parameters:
+  lookback_days: 20
+  winner_count: 1
+  cooldown_days: 0
+rebalance_frequency: monthly
+position_sizing: equal_weight
+execution: next_open
+

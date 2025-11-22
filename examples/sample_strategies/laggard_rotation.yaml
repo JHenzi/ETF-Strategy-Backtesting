@@ -1,0 +1,16 @@
+name: laggard_rotation
+description: "Buy the worst performing assets (mean reversion)"
+universe:
+  - XLP
+  - XLY
+  - XLK
+  - XLE
+  - XLF
+parameters:
+  lookback_days: 20
+  laggard_count: 1
+  cooldown_days: 30
+rebalance_frequency: weekly
+position_sizing: equal_weight
+execution: next_open
+

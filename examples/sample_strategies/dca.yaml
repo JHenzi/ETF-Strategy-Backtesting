@@ -1,0 +1,10 @@
+name: dca
+description: "Dollar Cost Averaging - invest fixed amount at regular intervals"
+universe:
+  - VTI
+  - VXUS
+contribution_amount: 100
+contribution_frequency: weekly
+position_sizing: equal_weight
+execution: next_open
+

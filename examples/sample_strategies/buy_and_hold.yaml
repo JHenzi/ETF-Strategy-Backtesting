@@ -1,0 +1,8 @@
+name: buy_and_hold
+description: "Simple buy and hold strategy - buy assets at start and hold"
+universe:
+  - SPY
+  - QQQ
+position_sizing: equal_weight
+execution: first_day_only
+

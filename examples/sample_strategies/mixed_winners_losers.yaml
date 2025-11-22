@@ -1,0 +1,17 @@
+name: mixed_winners_losers
+description: "Buy both top performers and bottom performers"
+universe:
+  - XLP
+  - XLY
+  - XLK
+  - XLI
+  - XLE
+parameters:
+  lookback_days: 15
+  winner_count: 1
+  laggard_count: 1
+  cooldown_days: 10
+rebalance_frequency: weekly
+position_sizing: equal_weight
+execution: next_open
+
