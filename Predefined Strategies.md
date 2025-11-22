@@ -1,6 +1,6 @@
 # Predefined Backtesting Strategies
 
-This document defines the **built‑in trading strategies** that the AI agent must implement in the backtesting engine. All strategies should be implemented in two forms:
+This document defines the **built‑in trading strategies** for the backtesting engine. All strategies should be implemented in two forms:
 
 1. **Python implementation** (strategy logic engine)
 2. **YAML definition** (user‑modifiable strategy parameters)
@@ -13,9 +13,27 @@ Each strategy describes:
 * **Expected behavior / rules**
 * **Example YAML block**
 
+## Implementation Status
+
+### ✅ Implemented Strategies (5/10)
+
+1. ✅ **Laggard Rotation Strategy** - Fully implemented with accumulation logic
+2. ✅ **Momentum Winner Strategy** - Fully implemented with accumulation logic
+3. ✅ **Mixed Winners/Losers Strategy** - Fully implemented with accumulation logic
+4. ✅ **Buy and Hold Strategy** - Fully implemented
+5. ✅ **Dollar Cost Averaging (DCA)** - Fully implemented with recurring contributions
+
+### 📋 TODO: Strategies to Implement (5/10)
+
+6. ⏳ **RSI Mean Reversion Strategy** - Not yet implemented
+7. ⏳ **Equal-Weighted Rebalance Strategy** - Not yet implemented
+8. ⏳ **Relative Strength vs Benchmark Strategy** - Not yet implemented
+9. ⏳ **Buy the Dip Strategy** - Not yet implemented
+10. ⏳ **SMA Crossover Strategy** - Not yet implemented
+
 ---
 
-# **1. Laggard Rotation Strategy**
+# **1. Laggard Rotation Strategy** ✅ IMPLEMENTED
 
 ### **Goal:** Buy ETFs/stocks that are underperforming relative to others in the chosen universe.
 
@@ -68,7 +86,7 @@ execution: next_open
 
 ---
 
-# **2. Momentum Winner Strategy**
+# **2. Momentum Winner Strategy** ✅ IMPLEMENTED
 
 ### **Goal:** Buy the strongest‑performing asset(s) over a recent momentum window.
 
@@ -103,7 +121,7 @@ execution: next_open
 
 ---
 
-# **3. Mixed Strategy (Buy Winners + Losers)**
+# **3. Mixed Strategy (Buy Winners + Losers)** ✅ IMPLEMENTED
 
 ### **Goal:** Buy both extremes — the top performers (momentum) and bottom performers (mean reversion).
 
@@ -137,7 +155,7 @@ execution: next_open
 
 ---
 
-# **4. RSI Oversold / Overbought Strategy**
+# **4. RSI Oversold / Overbought Strategy** ⏳ TODO
 
 ### **Goal:** Buy assets with RSI below a threshold (oversold)
 
@@ -168,7 +186,7 @@ execution: next_open
 
 ---
 
-# **5. Buy and Hold (Baseline Strategy)**
+# **5. Buy and Hold (Baseline Strategy)** ✅ IMPLEMENTED
 
 ### **Goal:** Benchmark to measure other strategies against.
 
@@ -192,7 +210,7 @@ execution: first_day_only
 
 ---
 
-# **6. Dollar Cost Averaging (DCA)**
+# **6. Dollar Cost Averaging (DCA)** ✅ IMPLEMENTED
 
 ### **Goal:** Invest a fixed amount at a fixed schedule.
 
@@ -218,7 +236,7 @@ execution: next_open
 
 ---
 
-# **7. Equal-Weighted Rebalance Strategy**
+# **7. Equal-Weighted Rebalance Strategy** ⏳ TODO
 
 ### **Goal:** Maintain equal weights across selected assets on a schedule.
 
@@ -243,7 +261,7 @@ execution: next_open
 
 ---
 
-# **8. Relative Strength vs Benchmark Strategy**
+# **8. Relative Strength vs Benchmark Strategy** ⏳ TODO
 
 ### **Goal:** Own assets outperforming a benchmark (e.g., SPY)
 
@@ -272,7 +290,7 @@ execution: next_open
 
 ---
 
-# **9. Market Crash / Deep Dip Strategy**
+# **9. Market Crash / Deep Dip Strategy** ⏳ TODO
 
 ### **Goal:** Deploy cash only when markets fall by large %.
 
@@ -297,7 +315,7 @@ execution: next_open
 
 ---
 
-# **10. Simple Moving Average Crossover Strategy**
+# **10. Simple Moving Average Crossover Strategy** ⏳ TODO
 
 ### **Goal:** Basic trend-following strategy.
 
@@ -322,11 +340,45 @@ execution: next_open
 
 ---
 
-# **Usage Notes for AI Agent**
+---
+
+## Implementation Notes
+
+### ✅ Completed Features
+
+All implemented strategies support:
+- **Accumulation Mode**: Rotation strategies (Laggard, Momentum, Mixed) only buy, never sell - they accumulate positions over time
+- **Equal Cash Allocation**: Available cash is automatically divided equally across all selected assets
+- **Recurring Reinvestments**: All strategies work with weekly/monthly contributions
+- **QQQ Baseline Comparison**: All backtests automatically compare against QQQ with the same investment pattern
+- **Fractional Shares**: All strategies support fractional share purchases
+- **Cooldown Periods**: Laggard and Momentum strategies support cooldown logic to prevent rapid re-entry
+
+### 📋 TODO: Remaining Strategy Implementations
+
+**Priority Order** (suggested):
+
+1. **RSI Mean Reversion** - Popular indicator, good for mean reversion strategies
+2. **SMA Crossover** - Classic trend-following strategy, widely understood
+3. **Buy the Dip** - Useful for market timing strategies
+4. **Equal Weight Rebalance** - Important for portfolio management
+5. **Relative Strength vs Benchmark** - Useful for sector rotation
+
+**Implementation Requirements**:
+- All strategies must validate against the YAML schema
+- Any undefined parameter should throw a clear error
+- Strategies must be pluggable: the system should load any YAML file dropped into `/examples/sample_strategies/`
+- Python implementations must live in: `backtest_engine/strategies/builtin/<strategy_name>.py`
+- Each strategy must extend `BaseStrategy` and implement `generate_signals()`
+- Example YAML files should be created in `examples/sample_strategies/`
+
+---
+
+## Usage Notes
 
 * All YAML strategies must validate against the schema.
 * Any undefined parameter should throw a clear error.
-* Strategies must be pluggable: the system should load any YAML file dropped into `/strategies/`.
-* Python implementations must live in a structured directory: `strategies/<strategy_name>.py`.
+* Strategies must be pluggable: the system should load any YAML file dropped into `/examples/sample_strategies/`.
+* Python implementations must live in a structured directory: `backtest_engine/strategies/builtin/<strategy_name>.py`.
 
 These predefined strategies give the user a powerful out-of-the-box experience and allow immediate comparison across common investing methods.
