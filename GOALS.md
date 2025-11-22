@@ -38,6 +38,24 @@ A user can:
     
 - Multitenant SaaS scaling. The product is single-user by design.
 
+## Future Enhancements (Open Items)
+
+### Enhanced Stock/ETF Picker in Strategy Builder
+
+**Current State**: Strategy builder uses a text input with comma-delimited ticker list.
+
+**Desired State**: Interactive stock/ETF picker with:
+- Checkbox selection interface
+- Search/filter functionality
+- Display of ticker name, type (Stock/ETF), and basic info
+- Integration with discovered tickers library
+- Visual selection with ability to add/remove tickers
+- Validation feedback (invalid tickers highlighted)
+
+**Why**: Better UX for selecting assets - users can see what they're selecting, search for tickers, and avoid typos. Makes strategy building more intuitive.
+
+**Priority**: Medium - Current text input works but could be much better.
+
 ---
 
 ## Current Problem: Zero Results in Backtests
@@ -301,12 +319,25 @@ A working backtest should show:
 5. Display QQQ equity curve alongside strategy curve
 6. Show "Did strategy beat QQQ?" indicator
 
-**Current Status**: ✅ **IMPLEMENTED** - QQQ baseline is calculated and saved, but chart display needs fixing.
+**Current Status**: ⚠️ **IN PROGRESS** - QQQ baseline calculation and chart display fixes in progress.
 
 **Implementation Details**:
-- ✅ Engine fetches QQQ data and calculates buy-and-hold performance
+- ✅ Engine fetches QQQ data
 - ✅ QQQ metrics saved to database (CAGR, Sharpe, return, etc.)
 - ✅ Relative performance calculated (strategy return - QQQ return)
 - ✅ QQQ equity curve saved in metadata
-- ⚠️ **TODO**: Fix QQQ chart rendering on results page (data exists but chart not showing QQQ line)
-- ⚠️ **TODO**: Ensure QQQ comparison metrics display correctly in UI
+- ✅ **FIXED**: QQQ now simulates with same investment pattern as strategy (reinvestments, contributions)
+- ✅ **FIXED**: Chart alignment by date (both datasets use same date keys)
+- ⚠️ **TESTING**: Need to verify QQQ comparison works correctly with various strategies
+
+**How QQQ Comparison Works**:
+1. QQQ portfolio starts with same initial cash as strategy
+2. QQQ receives same recurring contributions on same schedule
+3. QQQ reinvests contributions on contribution days (same as strategy)
+4. Both portfolios tracked day-by-day with same date alignment
+5. Metrics calculated for both and compared
+
+**Next Steps**:
+1. Test with buy_and_hold strategy to verify QQQ comparison is fair
+2. Verify chart displays both curves properly aligned
+3. Add QQQ comparison metrics to results table

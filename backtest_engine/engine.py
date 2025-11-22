@@ -277,20 +277,76 @@ class BacktestEngine:
                    f"total_trades={metrics.get('total_trades', 0)}")
         
         # Calculate QQQ baseline comparison
-        logger.info("Fetching QQQ baseline data...")
+        # Simulate QQQ with the SAME investment pattern as the strategy (reinvestments, etc.)
+        logger.info("Fetching QQQ baseline data and simulating investment pattern...")
         qqq_data = self.data_fetcher.fetch_ticker_data('QQQ', start_date, end_date)
         if not qqq_data.empty and 'adj_close' in qqq_data.columns:
-            # Calculate QQQ equity curve (buy and hold with same initial cash)
-            qqq_initial_price = qqq_data['adj_close'].iloc[0]
-            qqq_shares = initial_cash / qqq_initial_price
-            qqq_equity_curve = pd.DataFrame({
-                'date': qqq_data.index,
-                'total_value': qqq_data['adj_close'] * qqq_shares
-            })
-            qqq_equity_curve.set_index('date', inplace=True)
+            # Simulate QQQ portfolio with same investment pattern
+            qqq_portfolio = Portfolio(initial_cash=initial_cash)
+            qqq_portfolio.set_price_data('QQQ', qqq_data)
+            
+            # Get the same date range and contribution dates as the strategy
+            date_range = pd.bdate_range(start=start_date, end=end_date)
+            
+            # Apply same recurring contributions
+            if recurring_contribution:
+                start_dt = pd.to_datetime(start_date)
+                end_dt = pd.to_datetime(end_date)
+                contribution_dates = self.rebalance_scheduler.get_contribution_dates(
+                    start_dt, end_dt,
+                    recurring_contribution.get('frequency', 'weekly'),
+                    recurring_contribution.get('amount', 0)
+                )
+            else:
+                contribution_dates = {}
+            
+            # Simulate QQQ investment day by day (matching strategy pattern)
+            for current_date in date_range:
+                current_date_dt = pd.to_datetime(current_date).to_pydatetime()
+                current_date_ts = pd.Timestamp(current_date)
+                
+                # Add recurring contribution (same as strategy)
+                for contrib_date, contrib_amount in contribution_dates.items():
+                    if (pd.Timestamp(contrib_date).date() == current_date_dt.date() or 
+                        pd.Timestamp(contrib_date) == current_date_ts):
+                        qqq_portfolio.cash += contrib_amount
+                        logger.debug(f"QQQ: Added ${contrib_amount:.2f} contribution on {current_date}")
+                        break
+                
+                # Buy QQQ on first day and on contribution days (reinvest)
+                # Match the strategy's rebalancing pattern
+                should_buy_qqq = False
+                if len(qqq_portfolio.positions) == 0:
+                    # First day - initial investment
+                    should_buy_qqq = True
+                else:
+                    # Check if this is a contribution day
+                    is_contribution_day = False
+                    for contrib_date, contrib_amount in contribution_dates.items():
+                        if (pd.Timestamp(contrib_date).date() == current_date_dt.date() or 
+                            pd.Timestamp(contrib_date) == current_date_ts):
+                            is_contribution_day = True
+                            break
+                    
+                    if is_contribution_day:
+                        # Contribution day - reinvest all available cash
+                        should_buy_qqq = True
+                
+                if should_buy_qqq and qqq_portfolio.cash > 0:
+                    price = qqq_portfolio.get_price('QQQ', current_date_dt)
+                    if price and price > 0:
+                        qqq_portfolio.buy('QQQ', current_date_dt, qqq_portfolio.cash, price,
+                                         reason='QQQ baseline investment', allow_fractional=True)
+                        logger.debug(f"QQQ: Bought ${qqq_portfolio.cash:.2f} worth on {current_date}")
+                
+                # Take daily snapshot (same as strategy) - ensures same date alignment
+                qqq_portfolio.snapshot(current_date_dt)
+            
+            # Get QQQ equity curve (aligned with strategy dates)
+            qqq_equity_curve = qqq_portfolio.get_equity_curve()
             
             # Calculate QQQ metrics
-            qqq_metrics_calc = MetricsCalculator(qqq_equity_curve, pd.DataFrame())  # No trades for buy-and-hold
+            qqq_metrics_calc = MetricsCalculator(qqq_equity_curve, qqq_portfolio.get_trades_df())
             qqq_metrics = qqq_metrics_calc.calculate_all_metrics()
             
             # Calculate relative performance

@@ -863,23 +863,25 @@ execution: first_day_only
             
             // Draw equity curve chart
             if (equityCurve.length > 0) {
-                // Handle both array of objects and array of arrays
-                const dates = equityCurve.map(e => {
+                // Build strategy data with date as key for alignment
+                const strategyData = {};
+                equityCurve.forEach(e => {
                     if (typeof e === 'object' && e !== null) {
-                        return e.date || e.Date || (e.index ? e.index : '');
+                        const date = e.date || e.Date || (e.index ? e.index : '');
+                        const value = e.total_value || e.TotalValue || e.totalValue || 0;
+                        if (date) {
+                            strategyData[date] = value;
+                        }
                     }
-                    return '';
-                }).filter(d => d);
-                
-                const strategyValues = equityCurve.map(e => {
-                    if (typeof e === 'object' && e !== null) {
-                        return e.total_value || e.TotalValue || e.totalValue || 0;
-                    }
-                    return 0;
                 });
                 
+                // Get all unique dates and sort
+                const allDates = Object.keys(strategyData).sort();
+                
+                const strategyValues = allDates.map(d => strategyData[d] || 0);
+                
                 const traces = [{
-                    x: dates,
+                    x: allDates,
                     y: strategyValues,
                     type: 'scatter',
                     mode: 'lines',
@@ -887,38 +889,42 @@ execution: first_day_only
                     line: { color: '#3B82F6', width: 2 }
                 }];
                 
-                // Add QQQ baseline if available
-                // Check both direct qqq_equity_curve and metadata.qqq_equity_curve
+                // Add QQQ baseline if available - align by date
                 const qqqData = run.qqq_equity_curve || run.metadata?.qqq_equity_curve || [];
                 
                 if (qqqData && Array.isArray(qqqData) && qqqData.length > 0) {
                     console.log('QQQ data found:', qqqData.length, 'points');
-                    const qqqDates = qqqData.map(e => {
-                        if (typeof e === 'object' && e !== null) {
-                            return e.date || e.Date || (e.index ? e.index : '');
-                        }
-                        return '';
-                    }).filter(d => d);
                     
-                    const qqqValues = qqqData.map(e => {
+                    // Build QQQ data with date as key
+                    const qqqDataMap = {};
+                    qqqData.forEach(e => {
                         if (typeof e === 'object' && e !== null) {
-                            return e.total_value || e.TotalValue || e.totalValue || 0;
+                            const date = e.date || e.Date || (e.index ? e.index : '');
+                            const value = e.total_value || e.TotalValue || e.totalValue || 0;
+                            if (date) {
+                                qqqDataMap[date] = value;
+                            }
                         }
-                        return 0;
                     });
                     
-                    if (qqqDates.length > 0 && qqqValues.length > 0) {
-                        console.log('Adding QQQ trace with', qqqDates.length, 'points');
+                    // Align QQQ values with strategy dates (use same date array)
+                    const qqqValues = allDates.map(d => qqqDataMap[d] || null);
+                    
+                    // Only add QQQ trace if we have valid data
+                    const validQqqValues = qqqValues.filter(v => v !== null && v !== undefined);
+                    if (validQqqValues.length > 0) {
+                        console.log('Adding QQQ trace with', validQqqValues.length, 'valid points');
                         traces.push({
-                            x: qqqDates,
+                            x: allDates,
                             y: qqqValues,
                             type: 'scatter',
                             mode: 'lines',
                             name: 'QQQ Baseline',
-                            line: { color: '#10B981', width: 2, dash: 'dash' }
+                            line: { color: '#10B981', width: 2, dash: 'dash' },
+                            connectgaps: false  // Don't connect gaps where data is missing
                         });
                     } else {
-                        console.log('QQQ data exists but dates/values are empty');
+                        console.log('QQQ data exists but no valid values found');
                     }
                 } else {
                     console.log('No QQQ data found in run object');
