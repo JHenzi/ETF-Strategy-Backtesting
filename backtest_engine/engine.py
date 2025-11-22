@@ -63,16 +63,27 @@ class BacktestEngine:
         self.portfolio = Portfolio(initial_cash=initial_cash)
         self.execution_model = ExecutionModel(execution_when=execution_when)
         
-        # Fetch data for all assets
+        # Validate and fetch data for all assets
         assets = strategy.get_assets()
+        logger.info(f"Validating {len(assets)} tickers: {assets}")
+        
+        # Validate all tickers first
+        valid, invalid = self.data_fetcher.validate_tickers(assets)
+        if invalid:
+            raise ValueError(f"Invalid tickers: {', '.join(invalid)}. Please validate tickers before running backtest.")
+        
+        logger.info(f"All {len(valid)} tickers validated successfully")
+        
+        # Fetch price data
         price_data = {}
-        for ticker in assets:
+        for ticker in valid:
             try:
                 df = self.data_fetcher.fetch_ticker_data(ticker, start_date, end_date)
                 if df.empty:
                     raise ValueError(f"No data for {ticker}")
                 price_data[ticker] = df
                 self.portfolio.set_price_data(ticker, df)
+                logger.info(f"Fetched {len(df)} days of data for {ticker}")
             except Exception as e:
                 logger.error(f"Failed to fetch data for {ticker}: {e}")
                 raise
@@ -102,10 +113,12 @@ class BacktestEngine:
         
         last_rebalance_date = None
         last_trade_date = None
+        first_day = True
         
         # Main simulation loop
-        for current_date in date_range:
+        for idx, current_date in enumerate(date_range):
             current_date_dt = pd.to_datetime(current_date).to_pydatetime()
+            is_first_day = (idx == 0)
             
             # Add recurring contribution
             if current_date in contribution_dates:
@@ -115,13 +128,20 @@ class BacktestEngine:
             
             # Check if rebalancing is needed
             should_rebalance = False
-            if hasattr(strategy, 'rebalance_frequency'):
+            rebalance_freq = getattr(strategy, 'rebalance_frequency', None) or strategy.config.get('rebalance_frequency')
+            if rebalance_freq:
                 should_rebalance = self.rebalance_scheduler.should_rebalance(
-                    current_date_dt, last_rebalance_date, strategy.rebalance_frequency
+                    current_date_dt, last_rebalance_date, rebalance_freq
                 )
+                # Always rebalance on first day if strategy has rebalance_frequency
+                if is_first_day and rebalance_freq:
+                    should_rebalance = True
             
             # Generate signals from strategy
-            signals = strategy.generate_signals(current_date, should_rebalance)
+            signals = strategy.generate_signals(current_date_dt, should_rebalance)
+            
+            if signals:
+                logger.info(f"Generated {len(signals)} signals on {current_date} (rebalance: {should_rebalance})")
             
             # Process signals into orders
             for signal in signals:
@@ -129,30 +149,57 @@ class BacktestEngine:
                 if order:
                     self.execution_model.place_order(order)
             
-            # Execute pending orders
+            # Execute pending orders immediately for rebalancing strategies
+            # or based on execution_when setting
             executable = self.execution_model.get_executable_orders(
-                current_date_dt, last_trade_date
+                current_date_dt, last_trade_date, is_first_day=is_first_day
             )
+            
+            # If we have signals and should_rebalance, execute immediately (same day)
+            # This ensures rebalancing strategies execute trades on rebalance days
+            if signals and should_rebalance:
+                # For rebalancing, execute orders immediately (same day execution)
+                if not executable and self.execution_model.pending_orders:
+                    executable = self.execution_model.pending_orders.copy()
+                    logger.info(f"Force executing {len(executable)} rebalancing orders on {current_date}")
+            
+            if executable:
+                logger.info(f"Executing {len(executable)} orders on {current_date}")
+            
+            # For buy orders with amount=None, split cash equally across all pending buy orders
+            pending_buys = [o for o in executable if o.action == 'BUY' and o.amount is None]
+            if pending_buys:
+                if len(pending_buys) > 1:
+                    # Split cash equally across all buy orders
+                    cash_per_order = self.portfolio.cash / len(pending_buys)
+                    for order in pending_buys:
+                        order.amount = cash_per_order
+                    logger.debug(f"Splitting ${self.portfolio.cash:.2f} across {len(pending_buys)} buy orders")
+                else:
+                    # Single buy order, use all cash
+                    pending_buys[0].amount = self.portfolio.cash
             
             for order in executable:
                 if order.action == 'BUY':
                     price = self.portfolio.get_price(order.ticker, current_date_dt)
                     if price:
                         amount = order.amount if order.amount else self.portfolio.cash
-                        self.portfolio.buy(
-                            order.ticker, current_date_dt, amount, price,
-                            reason=order.reason, allow_fractional=True
-                        )
-                        last_trade_date = current_date_dt
+                        if amount > 0:
+                            self.portfolio.buy(
+                                order.ticker, current_date_dt, amount, price,
+                                reason=order.reason, allow_fractional=True
+                            )
+                            last_trade_date = current_date_dt
                 elif order.action == 'SELL':
                     price = self.portfolio.get_price(order.ticker, current_date_dt)
                     if price:
                         shares = order.shares
-                        self.portfolio.sell(
-                            order.ticker, current_date_dt, shares, price=price,
-                            reason=order.reason
-                        )
-                        last_trade_date = current_date_dt
+                        if shares:
+                            self.portfolio.sell(
+                                order.ticker, current_date_dt, shares, price=price,
+                                reason=order.reason
+                            )
+                            last_trade_date = current_date_dt
             
             self.execution_model.clear_executed_orders(executable)
             

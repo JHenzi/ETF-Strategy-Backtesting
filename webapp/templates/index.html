@@ -17,6 +17,9 @@
                 <button onclick="showTab('run')" id="tab-run" class="tab-button px-4 py-2 font-semibold text-blue-600 border-b-2 border-blue-600">
                     Run Backtest
                 </button>
+                <button onclick="showTab('builder')" id="tab-builder" class="tab-button px-4 py-2 font-semibold text-gray-600 hover:text-blue-600">
+                    Strategy Builder
+                </button>
                 <button onclick="showTab('results')" id="tab-results" class="tab-button px-4 py-2 font-semibold text-gray-600 hover:text-blue-600">
                     Results
                 </button>
@@ -32,6 +35,18 @@
                 <h2 class="text-2xl font-bold mb-4">Run New Backtest</h2>
                 
                 <form id="backtest-form" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Select Strategy</label>
+                        <div class="flex space-x-2 mb-2">
+                            <select id="strategy-select" class="flex-1 border border-gray-300 rounded-md p-2" onchange="loadStrategy()">
+                                <option value="">-- Select a strategy file --</option>
+                            </select>
+                            <button type="button" onclick="loadStrategy()" class="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600">
+                                Load
+                            </button>
+                        </div>
+                    </div>
+                    
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Strategy YAML</label>
                         <textarea id="strategy-yaml" rows="15" class="w-full border border-gray-300 rounded-md p-2 font-mono text-sm" required>
@@ -88,6 +103,98 @@ execution: first_day_only
             </div>
         </div>
         
+        <!-- Strategy Builder Tab -->
+        <div id="tab-content-builder" class="tab-content hidden">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-2xl font-bold mb-4">Strategy Builder</h2>
+                
+                <form id="strategy-builder-form" class="space-y-6">
+                    <!-- Strategy Type -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Strategy Type</label>
+                        <select id="builder-strategy-type" class="w-full border border-gray-300 rounded-md p-2" onchange="updateBuilderForm()">
+                            <option value="buy_and_hold">Buy and Hold</option>
+                            <option value="dca">Dollar Cost Averaging (DCA)</option>
+                            <option value="laggard_rotation">Laggard Rotation</option>
+                            <option value="momentum_winner">Momentum Winner</option>
+                            <option value="mixed_winners_losers">Mixed Winners & Losers</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Asset Universe -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Asset Universe (Tickers)</label>
+                        <div class="flex space-x-2 mb-2">
+                            <input type="text" id="builder-ticker-input" placeholder="Enter ticker (e.g., SPY)" class="flex-1 border border-gray-300 rounded-md p-2" onkeypress="if(event.key==='Enter'){event.preventDefault();addTicker();}">
+                            <button type="button" onclick="addTicker()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Add</button>
+                            <button type="button" onclick="validateTickers()" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">Validate All</button>
+                        </div>
+                        <div id="builder-tickers-list" class="flex flex-wrap gap-2 mb-2"></div>
+                        <button type="button" onclick="loadTickerLibrary()" class="text-sm text-blue-600 hover:underline">Browse discovered tickers...</button>
+                    </div>
+                    
+                    <!-- Strategy-specific parameters -->
+                    <div id="builder-parameters"></div>
+                    
+                    <!-- Capital Schedule -->
+                    <div class="border-t pt-4">
+                        <h3 class="text-lg font-semibold mb-3">Capital Schedule</h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Initial Cash</label>
+                                <input type="number" id="builder-initial-cash" value="10000" class="w-full border border-gray-300 rounded-md p-2" required>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Recurring Contribution</label>
+                                <div class="flex space-x-2">
+                                    <input type="number" id="builder-recurring-amount" value="0" placeholder="Amount" class="flex-1 border border-gray-300 rounded-md p-2">
+                                    <select id="builder-recurring-frequency" class="border border-gray-300 rounded-md p-2">
+                                        <option value="">None</option>
+                                        <option value="weekly">Weekly</option>
+                                        <option value="monthly">Monthly</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Execution Settings -->
+                    <div class="border-t pt-4">
+                        <h3 class="text-lg font-semibold mb-3">Execution Settings</h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Execution Timing</label>
+                                <select id="builder-execution" class="w-full border border-gray-300 rounded-md p-2">
+                                    <option value="next_open">Next Open</option>
+                                    <option value="same_day">Same Day</option>
+                                    <option value="market_close">Market Close</option>
+                                    <option value="first_day_only">First Day Only</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Position Sizing</label>
+                                <select id="builder-position-sizing" class="w-full border border-gray-300 rounded-md p-2">
+                                    <option value="equal_weight">Equal Weight</option>
+                                    <option value="single_asset">Single Asset</option>
+                                    <option value="all_in_on_signal">All In On Signal</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Generated YAML Preview -->
+                    <div class="border-t pt-4">
+                        <h3 class="text-lg font-semibold mb-3">Generated YAML</h3>
+                        <textarea id="builder-yaml-output" rows="15" class="w-full border border-gray-300 rounded-md p-2 font-mono text-sm" readonly></textarea>
+                        <div class="mt-2 flex space-x-2">
+                            <button type="button" onclick="copyYAML()" class="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600">Copy YAML</button>
+                            <button type="button" onclick="loadYAMLToEditor()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Use in Backtest</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
         <!-- Results Tab -->
         <div id="tab-content-results" class="tab-content hidden">
             <div class="bg-white rounded-lg shadow-md p-6">
@@ -132,6 +239,10 @@ execution: first_day_only
         let currentJobId = null;
         let jobCheckInterval = null;
         
+        // Strategy builder state
+        let builderTickers = [];
+        let builderStrategyType = 'buy_and_hold';
+        
         // Tab switching
         function showTab(tabName) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
@@ -148,8 +259,247 @@ execution: first_day_only
                 loadRuns();
             } else if (tabName === 'compare') {
                 loadRunsForCompare();
+            } else if (tabName === 'builder') {
+                updateBuilderForm();
+                generateYAML();
             }
         }
+        
+        // Strategy Builder Functions
+        function addTicker() {
+            const input = document.getElementById('builder-ticker-input');
+            const ticker = input.value.trim().toUpperCase();
+            if (ticker && !builderTickers.includes(ticker)) {
+                builderTickers.push(ticker);
+                updateTickerList();
+                input.value = '';
+                generateYAML();
+            }
+        }
+        
+        function removeTicker(ticker) {
+            builderTickers = builderTickers.filter(t => t !== ticker);
+            updateTickerList();
+            generateYAML();
+        }
+        
+        function updateTickerList() {
+            const container = document.getElementById('builder-tickers-list');
+            container.innerHTML = builderTickers.map(ticker => `
+                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800">
+                    ${ticker}
+                    <button onclick="removeTicker('${ticker}')" class="ml-2 text-blue-600 hover:text-blue-800">×</button>
+                </span>
+            `).join('');
+        }
+        
+        async function validateTickers() {
+            if (builderTickers.length === 0) {
+                alert('Please add tickers first');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/tickers/validate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({tickers: builderTickers})
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    if (result.invalid.length > 0) {
+                        alert('Invalid tickers: ' + result.invalid.join(', '));
+                        builderTickers = builderTickers.filter(t => !result.invalid.includes(t));
+                        updateTickerList();
+                    } else {
+                        alert('All tickers validated successfully!');
+                    }
+                    generateYAML();
+                }
+            } catch (error) {
+                alert('Error validating tickers: ' + error.message);
+            }
+        }
+        
+        async function loadTickerLibrary() {
+            try {
+                const response = await fetch('/api/tickers/list');
+                const result = await response.json();
+                
+                if (result.success && result.tickers.length > 0) {
+                    const tickerList = result.tickers.map(t => 
+                        `${t.ticker} - ${t.company_name} (${t.asset_type})`
+                    ).join('\n');
+                    
+                    const selected = prompt('Available tickers:\n\n' + tickerList + '\n\nEnter ticker to add:');
+                    if (selected) {
+                        const ticker = selected.split(' - ')[0].trim().toUpperCase();
+                        if (!builderTickers.includes(ticker)) {
+                            builderTickers.push(ticker);
+                            updateTickerList();
+                            generateYAML();
+                        }
+                    }
+                } else {
+                    alert('No tickers discovered yet. Add tickers in a strategy and they will be cached.');
+                }
+            } catch (error) {
+                alert('Error loading ticker library: ' + error.message);
+            }
+        }
+        
+        function updateBuilderForm() {
+            builderStrategyType = document.getElementById('builder-strategy-type').value;
+            const paramsDiv = document.getElementById('builder-parameters');
+            
+            let html = '<div class="border-t pt-4"><h3 class="text-lg font-semibold mb-3">Strategy Parameters</h3>';
+            
+            if (builderStrategyType === 'laggard_rotation' || builderStrategyType === 'momentum_winner') {
+                html += `
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Lookback Days</label>
+                            <input type="number" id="param-lookback-days" value="20" class="w-full border border-gray-300 rounded-md p-2" onchange="generateYAML()">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Count</label>
+                            <input type="number" id="param-count" value="1" class="w-full border border-gray-300 rounded-md p-2" onchange="generateYAML()">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Cooldown Days</label>
+                            <input type="number" id="param-cooldown-days" value="0" class="w-full border border-gray-300 rounded-md p-2" onchange="generateYAML()">
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Rebalance Frequency</label>
+                        <select id="param-rebalance-frequency" class="w-full border border-gray-300 rounded-md p-2" onchange="generateYAML()">
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="daily">Daily</option>
+                        </select>
+                    </div>
+                `;
+            } else if (builderStrategyType === 'mixed_winners_losers') {
+                html += `
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Lookback Days</label>
+                            <input type="number" id="param-lookback-days" value="15" class="w-full border border-gray-300 rounded-md p-2" onchange="generateYAML()">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Cooldown Days</label>
+                            <input type="number" id="param-cooldown-days" value="10" class="w-full border border-gray-300 rounded-md p-2" onchange="generateYAML()">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4 mt-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Winner Count</label>
+                            <input type="number" id="param-winner-count" value="1" class="w-full border border-gray-300 rounded-md p-2" onchange="generateYAML()">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Laggard Count</label>
+                            <input type="number" id="param-laggard-count" value="1" class="w-full border border-gray-300 rounded-md p-2" onchange="generateYAML()">
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Rebalance Frequency</label>
+                        <select id="param-rebalance-frequency" class="w-full border border-gray-300 rounded-md p-2" onchange="generateYAML()">
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                        </select>
+                    </div>
+                `;
+            } else if (builderStrategyType === 'dca') {
+                html += `
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Contribution Amount</label>
+                            <input type="number" id="param-contribution-amount" value="100" class="w-full border border-gray-300 rounded-md p-2" onchange="generateYAML()">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Contribution Frequency</label>
+                            <select id="param-contribution-frequency" class="w-full border border-gray-300 rounded-md p-2" onchange="generateYAML()">
+                                <option value="weekly">Weekly</option>
+                                <option value="monthly">Monthly</option>
+                            </select>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            paramsDiv.innerHTML = html;
+            generateYAML();
+        }
+        
+        function generateYAML() {
+            const strategyType = document.getElementById('builder-strategy-type').value;
+            let yaml = `name: ${strategyType}\n`;
+            
+            if (builderTickers.length > 0) {
+                yaml += 'universe:\n';
+                builderTickers.forEach(ticker => {
+                    yaml += `  - ${ticker}\n`;
+                });
+            }
+            
+            // Add parameters based on strategy type
+            if (strategyType === 'laggard_rotation' || strategyType === 'momentum_winner') {
+                yaml += 'parameters:\n';
+                yaml += `  lookback_days: ${document.getElementById('param-lookback-days')?.value || 20}\n`;
+                const countField = strategyType === 'laggard_rotation' ? 'laggard_count' : 'winner_count';
+                yaml += `  ${countField}: ${document.getElementById('param-count')?.value || 1}\n`;
+                yaml += `  cooldown_days: ${document.getElementById('param-cooldown-days')?.value || 0}\n`;
+                yaml += `rebalance_frequency: ${document.getElementById('param-rebalance-frequency')?.value || 'weekly'}\n`;
+            } else if (strategyType === 'mixed_winners_losers') {
+                yaml += 'parameters:\n';
+                yaml += `  lookback_days: ${document.getElementById('param-lookback-days')?.value || 15}\n`;
+                yaml += `  winner_count: ${document.getElementById('param-winner-count')?.value || 1}\n`;
+                yaml += `  laggard_count: ${document.getElementById('param-laggard-count')?.value || 1}\n`;
+                yaml += `  cooldown_days: ${document.getElementById('param-cooldown-days')?.value || 10}\n`;
+                yaml += `rebalance_frequency: ${document.getElementById('param-rebalance-frequency')?.value || 'weekly'}\n`;
+            } else if (strategyType === 'dca') {
+                yaml += `contribution_amount: ${document.getElementById('param-contribution-amount')?.value || 100}\n`;
+                yaml += `contribution_frequency: ${document.getElementById('param-contribution-frequency')?.value || 'weekly'}\n`;
+            }
+            
+            yaml += `position_sizing: ${document.getElementById('builder-position-sizing')?.value || 'equal_weight'}\n`;
+            yaml += `execution: ${document.getElementById('builder-execution')?.value || 'next_open'}\n`;
+            
+            document.getElementById('builder-yaml-output').value = yaml;
+        }
+        
+        function copyYAML() {
+            const yaml = document.getElementById('builder-yaml-output').value;
+            navigator.clipboard.writeText(yaml).then(() => {
+                alert('YAML copied to clipboard!');
+            });
+        }
+        
+        function loadYAMLToEditor() {
+            const yaml = document.getElementById('builder-yaml-output').value;
+            document.getElementById('strategy-yaml').value = yaml;
+            showTab('run');
+        }
+        
+        // Add event listeners for builder form changes
+        document.addEventListener('DOMContentLoaded', () => {
+            const builderForm = document.getElementById('strategy-builder-form');
+            if (builderForm) {
+                // Use event delegation for dynamically added inputs
+                builderForm.addEventListener('input', (e) => {
+                    if (e.target.id.startsWith('param-') || e.target.id.startsWith('builder-')) {
+                        generateYAML();
+                    }
+                });
+                builderForm.addEventListener('change', (e) => {
+                    if (e.target.id.startsWith('param-') || e.target.id.startsWith('builder-')) {
+                        generateYAML();
+                    }
+                });
+            }
+        });
         
         // Backtest form submission
         document.getElementById('backtest-form').addEventListener('submit', async (e) => {
@@ -401,6 +751,51 @@ execution: first_day_only
             }
         }
         
+        // Load strategy files list
+        async function loadStrategyList() {
+            try {
+                const response = await fetch('/api/strategies/list');
+                const result = await response.json();
+                
+                if (result.success) {
+                    const select = document.getElementById('strategy-select');
+                    select.innerHTML = '<option value="">-- Select a strategy file --</option>';
+                    
+                    result.strategies.forEach(strategy => {
+                        const option = document.createElement('option');
+                        option.value = strategy.filename;
+                        option.textContent = strategy.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading strategy list:', error);
+            }
+        }
+        
+        // Load a strategy file
+        async function loadStrategy() {
+            const select = document.getElementById('strategy-select');
+            const filename = select.value;
+            
+            if (!filename) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/strategies/load/${filename}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    document.getElementById('strategy-yaml').value = result.content;
+                } else {
+                    alert('Error loading strategy: ' + result.error);
+                }
+            } catch (error) {
+                alert('Error loading strategy: ' + error.message);
+            }
+        }
+        
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             const today = new Date().toISOString().split('T')[0];
@@ -410,6 +805,9 @@ execution: first_day_only
             
             document.getElementById('start-date').value = oneYearAgoStr;
             document.getElementById('end-date').value = today;
+            
+            // Load strategy list
+            loadStrategyList();
         });
     </script>
 </body>

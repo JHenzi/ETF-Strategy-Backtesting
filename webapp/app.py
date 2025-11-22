@@ -8,6 +8,7 @@ import threading
 import uuid
 from datetime import datetime
 import logging
+import pandas as pd
 
 import sys
 import os
@@ -62,15 +63,51 @@ def get_run(run_id):
     try:
         run_data = persistence.load_run(run_id)
         
-        # Convert DataFrames to JSON
-        if not run_data['equity_curve'].empty:
-            run_data['equity_curve'] = run_data['equity_curve'].reset_index().to_dict('records')
-        if not run_data['trades'].empty:
-            run_data['trades'] = run_data['trades'].to_dict('records')
+        # Convert DataFrames to JSON-serializable format
+        if 'equity_curve' in run_data:
+            equity_curve = run_data['equity_curve']
+            if isinstance(equity_curve, pd.DataFrame):
+                if not equity_curve.empty:
+                    # Reset index to include date as a column
+                    equity_curve_reset = equity_curve.reset_index()
+                    run_data['equity_curve'] = equity_curve_reset.to_dict('records')
+                else:
+                    run_data['equity_curve'] = []
+            elif equity_curve is None:
+                run_data['equity_curve'] = []
+        
+        if 'trades' in run_data:
+            trades = run_data['trades']
+            if isinstance(trades, pd.DataFrame):
+                if not trades.empty:
+                    run_data['trades'] = trades.to_dict('records')
+                else:
+                    run_data['trades'] = []
+            elif trades is None:
+                run_data['trades'] = []
+        
+        # Convert metadata DataFrames if any
+        if 'metadata' in run_data:
+            metadata = run_data['metadata']
+            if isinstance(metadata, dict):
+                # Check for any DataFrames in metadata
+                for key, value in metadata.items():
+                    if isinstance(value, pd.DataFrame):
+                        if not value.empty:
+                            metadata[key] = value.reset_index().to_dict('records')
+                        else:
+                            metadata[key] = []
+        
+        # Convert run_info Series/DataFrame if needed
+        if 'run_info' in run_data:
+            run_info = run_data['run_info']
+            if isinstance(run_info, pd.Series):
+                run_data['run_info'] = run_info.to_dict()
         
         return jsonify({'success': True, 'run': run_data})
     except Exception as e:
-        logger.error(f"Error loading run {run_id}: {e}")
+        import traceback
+        logger.error(f"Error loading run {run_id}: {e}\n{traceback.format_exc()}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -296,17 +333,23 @@ def compare_runs():
         equity1 = run1['equity_curve']
         equity2 = run2['equity_curve']
         
-        if not equity1.empty and not equity2.empty:
-            # Merge on date
-            merged = equity1.merge(
-                equity2,
-                left_index=True,
-                right_index=True,
-                suffixes=('_1', '_2'),
-                how='outer'
-            ).sort_index()
-            
-            comparison['equity_curves'] = merged.reset_index().to_dict('records')
+        # Ensure both are DataFrames
+        if isinstance(equity1, pd.DataFrame) and isinstance(equity2, pd.DataFrame):
+            if not equity1.empty and not equity2.empty:
+                # Merge on date
+                merged = equity1.merge(
+                    equity2,
+                    left_index=True,
+                    right_index=True,
+                    suffixes=('_1', '_2'),
+                    how='outer'
+                ).sort_index()
+                
+                comparison['equity_curves'] = merged.reset_index().to_dict('records')
+            else:
+                comparison['equity_curves'] = []
+        else:
+            comparison['equity_curves'] = []
         
         return jsonify({'success': True, 'comparison': comparison})
     except Exception as e:
@@ -326,13 +369,94 @@ def validate_tickers():
         
         valid, invalid = data_fetcher.validate_tickers(tickers)
         
+        # Get info for valid tickers
+        ticker_info = []
+        for ticker in valid:
+            info = data_fetcher.get_ticker_info(ticker)
+            if info:
+                ticker_info.append(info)
+        
         return jsonify({
             'success': True,
             'valid': valid,
-            'invalid': invalid
+            'invalid': invalid,
+            'ticker_info': ticker_info
         })
     except Exception as e:
         logger.error(f"Error validating tickers: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/tickers/list', methods=['GET'])
+def list_tickers():
+    """List all discovered/validated tickers."""
+    try:
+        tickers = data_fetcher.list_tickers()
+        return jsonify({
+            'success': True,
+            'tickers': tickers
+        })
+    except Exception as e:
+        logger.error(f"Error listing tickers: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/strategies/list', methods=['GET'])
+def list_strategies():
+    """List available YAML strategy files."""
+    try:
+        from pathlib import Path
+        
+        strategies_dir = Path('examples/sample_strategies')
+        strategies = []
+        
+        if strategies_dir.exists():
+            for yaml_file in strategies_dir.glob('*.yaml'):
+                strategies.append({
+                    'name': yaml_file.stem,
+                    'filename': yaml_file.name,
+                    'path': str(yaml_file)
+                })
+        
+        # Sort by name
+        strategies.sort(key=lambda x: x['name'])
+        
+        return jsonify({
+            'success': True,
+            'strategies': strategies
+        })
+    except Exception as e:
+        logger.error(f"Error listing strategies: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/strategies/load/<path:filename>', methods=['GET'])
+def load_strategy(filename):
+    """Load a strategy YAML file by filename."""
+    try:
+        from pathlib import Path
+        
+        # Security: only allow files from sample_strategies directory
+        strategies_dir = Path('examples/sample_strategies')
+        file_path = strategies_dir / filename
+        
+        # Ensure the file is within the strategies directory (prevent path traversal)
+        if not file_path.resolve().is_relative_to(strategies_dir.resolve()):
+            return jsonify({'success': False, 'error': 'Invalid file path'}), 400
+        
+        if not file_path.exists():
+            return jsonify({'success': False, 'error': 'File not found'}), 404
+        
+        with open(file_path, 'r') as f:
+            content = f.read()
+        
+        return jsonify({
+            'success': True,
+            'content': content,
+            'filename': filename
+        })
+    except Exception as e:
+        logger.error(f"Error loading strategy {filename}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

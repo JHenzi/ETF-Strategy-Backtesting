@@ -48,6 +48,17 @@ class DataFetcher:
             )
         """)
         
+        # Ticker registry with company names
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ticker_registry (
+                ticker TEXT PRIMARY KEY,
+                company_name TEXT,
+                asset_type TEXT,
+                first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_validated TIMESTAMP
+            )
+        """)
+        
         conn.commit()
         conn.close()
     
@@ -187,6 +198,7 @@ class DataFetcher:
     def validate_tickers(self, tickers: List[str]) -> Tuple[List[str], List[str]]:
         """
         Validate that tickers exist and have data available.
+        Caches ticker info (name, type) in registry.
         
         Returns:
             Tuple of (valid_tickers, invalid_tickers)
@@ -194,19 +206,84 @@ class DataFetcher:
         valid = []
         invalid = []
         
+        conn = sqlite3.connect(self.cache_db_path)
+        cursor = conn.cursor()
+        
         for ticker in tickers:
+            ticker_upper = ticker.upper()
+            
+            # Check if already in registry
+            cursor.execute("SELECT ticker FROM ticker_registry WHERE ticker = ?", (ticker_upper,))
+            if cursor.fetchone():
+                valid.append(ticker_upper)
+                continue
+            
             try:
-                ticker_obj = yf.Ticker(ticker.upper())
+                ticker_obj = yf.Ticker(ticker_upper)
                 info = ticker_obj.info
+                
                 if info and 'symbol' in info:
-                    valid.append(ticker.upper())
+                    # Extract company name and type
+                    company_name = info.get('longName') or info.get('shortName') or info.get('name', ticker_upper)
+                    asset_type = 'ETF' if 'etf' in info.get('quoteType', '').lower() else 'Stock'
+                    
+                    # Store in registry
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO ticker_registry 
+                        (ticker, company_name, asset_type, last_validated)
+                        VALUES (?, ?, ?, ?)
+                    """, (ticker_upper, company_name, asset_type, datetime.now().isoformat()))
+                    
+                    valid.append(ticker_upper)
+                    logger.info(f"Validated and cached {ticker_upper}: {company_name} ({asset_type})")
                 else:
-                    invalid.append(ticker.upper())
+                    invalid.append(ticker_upper)
             except Exception as e:
                 logger.warning(f"Ticker {ticker} validation failed: {e}")
-                invalid.append(ticker.upper())
+                invalid.append(ticker_upper)
+        
+        conn.commit()
+        conn.close()
         
         return valid, invalid
+    
+    def get_ticker_info(self, ticker: str) -> Optional[dict]:
+        """Get cached ticker information."""
+        conn = sqlite3.connect(self.cache_db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT ticker, company_name, asset_type, first_seen, last_validated
+            FROM ticker_registry WHERE ticker = ?
+        """, (ticker.upper(),))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return {
+                'ticker': row[0],
+                'company_name': row[1],
+                'asset_type': row[2],
+                'first_seen': row[3],
+                'last_validated': row[4]
+            }
+        return None
+    
+    def list_tickers(self) -> List[dict]:
+        """List all discovered/validated tickers."""
+        conn = sqlite3.connect(self.cache_db_path)
+        
+        query = """
+            SELECT ticker, company_name, asset_type, first_seen, last_validated
+            FROM ticker_registry
+            ORDER BY company_name
+        """
+        
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        
+        return df.to_dict('records')
     
     def export_to_csv(self, ticker: str, output_path: str):
         """Export cached data for a ticker to CSV."""

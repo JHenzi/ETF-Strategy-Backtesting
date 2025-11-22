@@ -137,3 +137,126 @@
 - Flask UI: run a backtest, show equity curve, metrics table, trades list, and compare two runs.
     
 - Persist completed runs to SQLite and be able to load them.
+
+---
+
+## Recent Accomplishments (November 2025)
+
+### ✅ Completed Features
+
+**Epic 1 — Data Layer** ✅ COMPLETE
+- ✅ Yahoo Finance ingestion with SQLite caching
+- ✅ Per-ticker caching with date range checking
+- ✅ Ticker validation endpoint
+- ✅ CSV export capability (in fetcher)
+
+**Epic 2 — Core Backtesting Engine** ✅ COMPLETE
+- ✅ Portfolio simulation with fractional shares
+- ✅ Order execution model (next_open, first_day_only, same_day, market_close)
+- ✅ Recurring contribution handling (weekly, monthly)
+- ✅ Trade ledger with metadata
+- ✅ Strategy validation/dry-run before execution
+- ✅ Comprehensive metrics calculator (CAGR, Sharpe, Sortino, max drawdown, win rate, volatility, profit factor, time-in-negative)
+- ✅ Rolling metrics (30/60/90 day windows)
+- ✅ Underwater plot data generation
+- ✅ Fixed execution timing bugs (first_day_only, next_open)
+- ✅ Fixed cash splitting for multiple buy orders
+
+**Epic 3 — Strategy Configuration** ✅ COMPLETE
+- ✅ YAML schema validator with clear error messages
+- ✅ Strategy factory for loading strategies
+- ✅ Built-in strategies implemented:
+  - ✅ Buy & Hold
+  - ✅ DCA (Dollar Cost Averaging)
+  - ✅ Laggard Rotation
+  - ✅ Momentum Winner
+  - ✅ Mixed Winners/Losers
+- ✅ Sample YAML files in examples/sample_strategies/
+
+**Epic 4 — Persistence & Results Store** ✅ COMPLETE
+- ✅ SQLite schema: runs, metrics, trades, equity_curve, run_metadata
+- ✅ Save/load/delete runs
+- ✅ Fixed type conversion issues (pandas Timestamps, numpy types → SQLite compatible)
+- ✅ Fixed DataFrame JSON serialization
+
+**Epic 5 — Flask UI** 🟡 MOSTLY COMPLETE
+- ✅ Backtest runner UI with YAML editor
+- ✅ **NEW**: Strategy file selector dropdown (loads from examples/sample_strategies/)
+- ✅ Strategy validation UI
+- ✅ Results list view
+- ✅ Run comparison view
+- ✅ Job status tracking with progress bars
+- ✅ API endpoints for all operations
+- ⚠️ **TODO**: Equity curve visualization (Plotly charts)
+- ⚠️ **TODO**: Detailed results view with charts
+- ⚠️ **TODO**: Downloadable CSV exports
+- ⚠️ **TODO**: Trades timeline visualization
+
+**Epic 7 — Documentation** ✅ COMPLETE
+- ✅ README with quickstart
+- ✅ Sample strategy YAML files
+- ✅ Project structure documentation
+
+### 🐛 Bugs Fixed
+
+1. **Race condition in job initialization** - Fixed job dictionary initialization before thread start
+2. **SQLite type binding errors** - Added type conversion for pandas/numpy types
+3. **DataFrame JSON serialization** - Fixed DataFrame to dict conversion in API responses
+4. **Order execution timing** - Fixed first_day_only and next_open execution modes
+5. **Cash splitting** - Fixed equal-weight allocation across multiple buy orders
+6. **Date comparison** - Fixed datetime comparison in buy_and_hold strategy
+
+---
+
+## Future Enhancements
+
+### High Priority
+
+**Epic 5 — Flask UI (Remaining)**
+- [ ] Equity curve visualization with Plotly
+- [ ] Underwater plot (drawdown chart)
+- [ ] Rolling metrics charts
+- [ ] Detailed run view page with all visualizations
+- [ ] Trades timeline/interactive table
+- [ ] CSV export for trades and equity curve
+- [ ] Enhanced comparison view with side-by-side charts
+
+**Epic 3 — Additional Strategies**
+- [ ] RSI Mean Reversion strategy
+- [ ] SMA Crossover strategy
+- [ ] Relative Strength vs Benchmark
+- [ ] Buy the Dip strategy
+- [ ] Equal Weight Rebalance strategy
+
+### Medium Priority
+
+**Epic 2 — Engine Enhancements**
+- [ ] Commission/slippage modeling (configurable)
+- [ ] More sophisticated position sizing options
+- [ ] Stop-loss and take-profit support
+- [ ] Portfolio rebalancing logic improvements
+
+**Epic 5 — UI Enhancements**
+- [ ] Asset universe selector with search/autocomplete
+- [ ] Strategy builder UI (visual YAML editor)
+- [ ] Real-time backtest progress with streaming logs
+- [ ] Strategy templates library
+- [ ] Export results to PDF
+
+**Epic 6 — Live Mode & Alerts** (Future)
+- [ ] Daily price update script
+- [ ] Live portfolio simulation
+- [ ] Alerts page for strategy signals
+- [ ] Email/SMS notifications
+
+### Low Priority
+
+- [ ] Multi-currency support
+- [ ] Options/derivatives support
+- [ ] Portfolio optimization (Modern Portfolio Theory)
+- [ ] Monte Carlo simulation
+- [ ] Walk-forward analysis
+- [ ] Parameter optimization
+- [ ] Strategy backtesting API (for programmatic access)
+- [ ] Docker containerization
+- [ ] Cloud deployment guide

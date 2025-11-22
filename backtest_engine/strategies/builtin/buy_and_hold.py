@@ -1,6 +1,7 @@
 """Buy and Hold strategy implementation."""
 from typing import Dict, List, Any
 from datetime import datetime
+import pandas as pd
 from ..base_strategy import BaseStrategy
 import logging
 
@@ -18,13 +19,18 @@ class BuyAndHoldStrategy(BaseStrategy):
         """Generate signals - only buy on first day."""
         signals = []
         
-        if not self.has_bought and current_date >= self.start_date:
+        # Convert dates to comparable format
+        current_date_pd = pd.to_datetime(current_date)
+        start_date_pd = pd.to_datetime(self.start_date)
+        
+        if not self.has_bought and current_date_pd >= start_date_pd:
             # Buy all assets on first day
+            logger.info(f"Buy and Hold: Generating buy signals for {len(self.universe)} assets on {current_date}")
             for ticker in self.universe:
                 signals.append({
                     'ticker': ticker,
                     'action': 'BUY',
-                    'amount': None,  # Use all available cash
+                    'amount': None,  # Will be split equally across all assets
                     'reason': 'Buy and Hold initial purchase'
                 })
             self.has_bought = True

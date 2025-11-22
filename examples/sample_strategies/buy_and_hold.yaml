@@ -24,9 +24,5 @@ universe:
   - DBC
   - GLD
   - TAN
-  - DRIV
-  - HYDR
-  - KGRN
-  - CNRG
 position_sizing: equal_weight
 execution: first_day_only
