@@ -25,28 +25,30 @@ backtester/
 YAML Strategy Schema (example)
 
 ```yaml
-name: "lagging_sector_buy"
-description: "Buy the N lowest performers over lookback_days, cooldown applied."
-assets: ["XLP", "XLY", "XLK", "XLF"]
+name: laggard_rotation
+description: "Buy the worst performing assets (mean reversion)"
+universe:
+  - XLP
+  - XLY
+  - XLK
+  - XLE
+  - XLF
 parameters:
-lookback_days: 20
-N: 1
-cooldown_days: 30
-rebalance_frequency: "weekly"
-position_sizing:
-type: "equal_weight"
-invest_per_trade: null # null => split total cash evenly across picks
-cash:
-initial: 1000
-recurring:
-amount: 50
-interval: "weekly"
-execution:
-when: "market_close"
-allow_fractional_shares: true
-metrics:
-compute: ["cagr","sharpe","sortino","max_drawdown","time_in_negative"]
+  lookback_days: 20
+  laggard_count: 0  # 0 or 1 = buy ALL laggards, >1 = buy that many laggards
+  cooldown_days: 30
+rebalance_frequency: weekly
+position_sizing: equal_weight
+execution: next_open
 ```
+
+**Key Implementation Details**:
+- `universe` (not `assets`) - list of ticker symbols
+- `parameters` - strategy-specific parameters (lookback_days, laggard_count, etc.)
+- `rebalance_frequency` - weekly, monthly, etc.
+- `position_sizing` - equal_weight (cash split equally)
+- `execution` - next_open, same_day, first_day_only, market_close
+- Recurring contributions handled via API (not in YAML) - see web UI
 
 Notes:
 
@@ -79,13 +81,25 @@ Use these steps for an AI agent (or a human) to add a new strategy, run tests, a
         
     - Use `engine.py` to simulate ordered events by date; produce a trade ledger and daily portfolio states.
         
-    - Persist the run: save strategy\_yaml, run\_metadata, trades, daily\_timeseries, metrics into SQLite.
+    - **Cash Allocation**: Available cash is divided equally across all buy orders (e.g., 5 stocks = cash/5 each).
+        
+    - **Recurring Reinvestments**: Contributions added before rebalancing, then split equally across targets.
+        
+    - **QQQ Baseline**: Automatically simulates QQQ with same investment pattern for comparison.
+        
+    - Persist the run: save strategy\_yaml, run\_metadata, trades, daily\_timeseries, metrics, QQQ data into SQLite.
         
 4. **Compute metrics & artifacts**
     
     - Run metrics engine to compute all configured metrics and rolling windows.
         
+    - Calculate QQQ metrics in parallel (CAGR, Sharpe, return, etc.).
+        
+    - Calculate relative performance (strategy return - QQQ return).
+        
     - Generate visual assets: Plotly JSON for charts that the Flask UI can render.
+        
+    - Equity curve charts with QQQ overlay (aligned by date).
         
 5. **Populate UI**
     

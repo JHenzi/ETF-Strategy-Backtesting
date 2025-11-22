@@ -222,12 +222,23 @@ class BacktestPersistence:
                     ))
             
             # Save metadata (including QQQ data)
+            # Convert QQQ equity curve to records format with date as string (matching strategy format)
+            qqq_equity_curve = results.get('qqq_equity_curve', pd.DataFrame())
+            if isinstance(qqq_equity_curve, pd.DataFrame) and not qqq_equity_curve.empty:
+                # Reset index to make date a column, then convert dates to strings
+                qqq_curve_reset = qqq_equity_curve.reset_index()
+                if 'date' in qqq_curve_reset.columns:
+                    qqq_curve_reset['date'] = qqq_curve_reset['date'].dt.strftime('%Y-%m-%d')
+                qqq_equity_curve_records = qqq_curve_reset.to_dict('records')
+            else:
+                qqq_equity_curve_records = []
+            
             metadata = {
                 'rolling_metrics_30': results.get('rolling_metrics_30', {}),
                 'rolling_metrics_60': results.get('rolling_metrics_60', {}),
                 'rolling_metrics_90': results.get('rolling_metrics_90', {}),
                 'underwater_plot': results.get('underwater_plot', {}),
-                'qqq_equity_curve': results.get('qqq_equity_curve', pd.DataFrame()).to_dict('records') if isinstance(results.get('qqq_equity_curve'), pd.DataFrame) else [],
+                'qqq_equity_curve': qqq_equity_curve_records,
                 'qqq_metrics': results.get('qqq_metrics', {})
             }
             cursor.execute("""

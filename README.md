@@ -48,6 +48,7 @@ python webapp/app.py
    - Select the "Run Backtest" tab
    - Paste a YAML strategy (or use one from `examples/sample_strategies/`)
    - Set start/end dates and initial cash
+   - (Optional) Set recurring reinvestment amount and frequency
    - Click "Run Backtest"
 
 4. View results:
@@ -65,19 +66,27 @@ Strategies are defined in YAML format. Here's an example:
 
 ```yaml
 name: laggard_rotation
-description: "Buy the worst performing assets"
+description: "Buy the worst performing assets (mean reversion)"
 universe:
   - XLP
   - XLY
   - XLK
+  - XLE
+  - XLF
 parameters:
   lookback_days: 20
-  laggard_count: 1
+  laggard_count: 0  # 0 or 1 = buy ALL laggards, >1 = buy that many laggards
   cooldown_days: 30
 rebalance_frequency: weekly
 position_sizing: equal_weight
 execution: next_open
 ```
+
+**Key Points**:
+- `laggard_count: 0` or `1` means buy **ALL** laggards (all assets in universe)
+- `laggard_count > 1` means buy only that many worst performers
+- Cash is automatically split equally across all selected laggards
+- Strategy accumulates positions (never sells) - builds portfolio over time
 
 ### Available Strategies
 
@@ -153,6 +162,10 @@ The system is designed to be:
 - **Ticker Validation & Caching**: Automatic validation and caching of ticker symbols with company names
 - **Ticker Library**: Browse all discovered/validated tickers
 - **Enhanced Logging**: Detailed logging for debugging backtest execution
+- **QQQ Baseline Comparison**: All backtests now automatically compare against QQQ with same investment pattern
+- **Recurring Reinvestment**: Support for weekly/monthly reinvestments with configurable amounts
+- **Beautiful Results Page**: Interactive charts, metrics tables, and QQQ comparison visualization
+- **Accumulation Strategies**: All rotation strategies now accumulate positions (no selling)
 
 ### Bug Fixes
 - Fixed rebalance logic to use trading days instead of calendar days
@@ -160,9 +173,18 @@ The system is designed to be:
 - Fixed position tracking synchronization between strategy and portfolio
 - Fixed DataFrame JSON serialization in API responses
 - Fixed SQLite type conversion for pandas/numpy types
+- Fixed `get_returns()` to handle missing trading days gracefully
+- Fixed cash allocation to split equally across all buy orders
+- Fixed QQQ chart alignment by date for proper overlay comparison
+- Fixed QQQ simulation to match strategy investment pattern (reinvestments)
+
+### Strategy Updates
+- **Laggard Rotation**: Now buys ALL laggards when `laggard_count <= 1` (splits cash equally)
+- **All Rotation Strategies**: Changed to accumulation-only (no selling, only buying)
+- **Cash Allocation**: Always divides available cash equally by number of target stocks/ETFs
 
 ### Known Issues
-- **Zero Results Bug**: Some strategies (particularly rebalancing strategies) may return all-zero metrics. See troubleshooting section below.
+- **Resolved**: Zero results bug has been fixed - strategies now execute trades correctly
 
 ## Troubleshooting
 
@@ -229,16 +251,19 @@ The engine logs key events. Check the console output for:
 
 1. **Strategy Loading**: YAML is parsed and validated
 2. **Ticker Validation**: All tickers are validated and cached
-3. **Data Fetching**: Historical price data is fetched (or loaded from cache)
+3. **Data Fetching**: Historical price data is fetched (or loaded from cache) for both strategy assets and QQQ
 4. **Simulation Loop**: For each trading day:
-   - Check if rebalancing is needed
-   - Generate buy/sell signals
+   - Add recurring contributions (if configured) to portfolio cash
+   - Check if rebalancing is needed (using trading days)
+   - Generate buy/sell signals from strategy
    - Place orders
+   - **Cash Allocation**: Split available cash equally across all buy orders
    - Execute orders (on rebalance days, execute immediately)
    - Update portfolio (cash, positions)
    - Take daily snapshot (for equity curve)
-5. **Metrics Calculation**: Compute performance metrics from equity curve
-6. **Results Storage**: Save to SQLite database
+5. **QQQ Baseline Simulation**: In parallel, simulate QQQ with same investment pattern
+6. **Metrics Calculation**: Compute performance metrics from equity curve for both strategy and QQQ
+7. **Results Storage**: Save to SQLite database (strategy + QQQ data)
 
 ### Portfolio Simulation
 
@@ -252,27 +277,51 @@ The engine simulates a real portfolio:
 
 For weekly rebalancing:
 - Counts **trading days** since last rebalance (not calendar days)
-- Rebalances when 5+ trading days have passed OR 7+ calendar days
+- Rebalances when 5+ trading days have passed
 - Executes all trades on the same day (immediate execution)
-- Splits available cash equally across buy orders
+- **Cash Allocation**: Splits available cash equally across ALL buy orders
+  - Example: $10,000 cash + 5 laggards = $2,000 per stock
+  - Example: $100 contribution + 5 laggards = $20 per stock
+
+### Cash Allocation
+
+**How it works**:
+- All buy orders with `amount: None` are collected
+- Total available cash is divided by number of buy orders
+- Each order gets `total_cash / number_of_orders`
+- This ensures equal allocation across all target stocks/ETFs
+
+**Example**:
+- Initial cash: $10,000
+- Strategy selects 5 laggards
+- Each laggard gets: $10,000 / 5 = $2,000
+- Next week: Add $100 contribution
+- Each laggard gets: $100 / 5 = $20
 
 ### Baseline Comparison
 
-**TODO**: Currently not implemented. Planned feature:
-- Automatically fetch QQQ data
-- Calculate QQQ performance in parallel
-- Include relative performance metrics
-- Show comparison charts
+**✅ IMPLEMENTED**: All backtests automatically compare against QQQ baseline.
+
+**How it works**:
+- QQQ portfolio starts with same initial cash as strategy
+- QQQ receives same recurring contributions on same schedule
+- QQQ reinvests on contribution days (matching strategy pattern)
+- Both portfolios tracked day-by-day with same date alignment
+- Metrics calculated for both: CAGR, Sharpe, Sortino, max drawdown, etc.
+- Relative performance shown: strategy return vs QQQ return
+- Chart displays both equity curves overlaid for visual comparison
+- "Beat QQQ" indicator shows if strategy outperformed baseline
 
 ## Future Enhancements
 
-- **Baseline Comparison**: Automatic QQQ (or custom benchmark) comparison
+- **✅ Baseline Comparison**: QQQ comparison implemented (see above)
+- **Enhanced Stock/ETF Picker**: Interactive checkbox selection with search/filter (see GOALS.md)
 - **Additional Strategies**: RSI, SMA crossover, Relative Strength, Buy the Dip
 - **More Sophisticated Position Sizing**: Kelly Criterion, risk-based sizing
 - **Commission & Slippage Modeling**: Realistic trading costs
 - **Live Mode**: Daily price updates and simulated live portfolio
 - **Export Results**: CSV/Excel export for trades and equity curve
-- **Enhanced Visualizations**: Plotly charts for equity curves, drawdowns, rolling metrics
+- **Custom Benchmark Selection**: Allow users to choose benchmark other than QQQ
 
 ## License
 

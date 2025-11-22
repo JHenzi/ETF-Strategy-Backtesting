@@ -195,24 +195,32 @@ class BacktestEngine:
             # This ensures we divide total cash by number of stocks/ETFs
             pending_buys = [o for o in executable if o.action == 'BUY' and o.amount is None]
             if pending_buys:
-                # Always split cash equally across all buy orders (even if just one)
-                # This ensures consistent allocation
-                cash_per_order = self.portfolio.cash / len(pending_buys)
+                # Always split cash equally across all buy orders
+                # This ensures we divide total cash by number of stocks/ETFs
+                total_cash = self.portfolio.cash
+                cash_per_order = total_cash / len(pending_buys)
                 for order in pending_buys:
                     order.amount = cash_per_order
-                logger.info(f"Splitting ${self.portfolio.cash:.2f} across {len(pending_buys)} buy orders (${cash_per_order:.2f} each)")
+                logger.info(f"Splitting ${total_cash:.2f} across {len(pending_buys)} buy orders (${cash_per_order:.2f} each)")
             
             for order in executable:
                 if order.action == 'BUY':
                     price = self.portfolio.get_price(order.ticker, current_date_dt)
                     if price:
-                        amount = order.amount if order.amount else self.portfolio.cash
+                        # Use the pre-calculated amount (already split equally)
+                        amount = order.amount
+                        if amount is None:
+                            # Fallback: if amount wasn't set, use all cash (shouldn't happen)
+                            amount = self.portfolio.cash
+                            logger.warning(f"Order for {order.ticker} has no amount set, using all cash")
+                        
                         if amount > 0:
                             self.portfolio.buy(
                                 order.ticker, current_date_dt, amount, price,
                                 reason=order.reason, allow_fractional=True
                             )
                             last_trade_date = current_date_dt
+                            logger.debug(f"Executed BUY: {order.ticker} - ${amount:.2f} at ${price:.2f}")
                 elif order.action == 'SELL':
                     price = self.portfolio.get_price(order.ticker, current_date_dt)
                     if price:

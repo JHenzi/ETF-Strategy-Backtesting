@@ -70,6 +70,9 @@ def get_run(run_id):
                 if not equity_curve.empty:
                     # Reset index to include date as a column
                     equity_curve_reset = equity_curve.reset_index()
+                    # Ensure date column is formatted as YYYY-MM-DD string
+                    if 'date' in equity_curve_reset.columns:
+                        equity_curve_reset['date'] = pd.to_datetime(equity_curve_reset['date']).dt.strftime('%Y-%m-%d')
                     run_data['equity_curve'] = equity_curve_reset.to_dict('records')
                 else:
                     run_data['equity_curve'] = []
@@ -80,7 +83,11 @@ def get_run(run_id):
             trades = run_data['trades']
             if isinstance(trades, pd.DataFrame):
                 if not trades.empty:
-                    run_data['trades'] = trades.to_dict('records')
+                    # Ensure date column is formatted as YYYY-MM-DD string
+                    trades_copy = trades.copy()
+                    if 'date' in trades_copy.columns:
+                        trades_copy['date'] = pd.to_datetime(trades_copy['date']).dt.strftime('%Y-%m-%d')
+                    run_data['trades'] = trades_copy.to_dict('records')
                 else:
                     run_data['trades'] = []
             elif trades is None:
@@ -101,7 +108,25 @@ def get_run(run_id):
         # Extract QQQ data from metadata for easier access
         if 'metadata' in run_data and isinstance(run_data['metadata'], dict):
             if 'qqq_equity_curve' in run_data['metadata']:
-                run_data['qqq_equity_curve'] = run_data['metadata']['qqq_equity_curve']
+                qqq_curve = run_data['metadata']['qqq_equity_curve']
+                # Ensure QQQ equity curve is in the same format as strategy equity curve
+                # (list of dicts with 'date' and 'total_value' keys)
+                if isinstance(qqq_curve, pd.DataFrame):
+                    if not qqq_curve.empty:
+                        qqq_curve_reset = qqq_curve.reset_index()
+                        if 'date' in qqq_curve_reset.columns:
+                            qqq_curve_reset['date'] = qqq_curve_reset['date'].dt.strftime('%Y-%m-%d')
+                        run_data['qqq_equity_curve'] = qqq_curve_reset.to_dict('records')
+                    else:
+                        run_data['qqq_equity_curve'] = []
+                elif isinstance(qqq_curve, list):
+                    # Already in records format, ensure dates are strings
+                    for record in qqq_curve:
+                        if 'date' in record and isinstance(record['date'], (pd.Timestamp, datetime)):
+                            record['date'] = pd.to_datetime(record['date']).strftime('%Y-%m-%d')
+                    run_data['qqq_equity_curve'] = qqq_curve
+                else:
+                    run_data['qqq_equity_curve'] = []
             if 'qqq_metrics' in run_data['metadata']:
                 run_data['qqq_metrics'] = run_data['metadata']['qqq_metrics']
         
@@ -343,16 +368,65 @@ def compare_runs():
             'differences': {}
         }
         
-        # Calculate differences
+        # Define which metrics are "higher is better" vs "lower is better"
+        # Higher is better: total_return, cagr, annualized_return, sharpe_ratio, sortino_ratio, win_rate, profit_factor
+        # Lower is better: max_drawdown, max_drawdown_duration, volatility, time_in_negative, avg_loss
+        higher_is_better = {
+            'total_return': True, 'cagr': True, 'annualized_return': True,
+            'sharpe_ratio': True, 'sortino_ratio': True, 'win_rate': True,
+            'profit_factor': True, 'avg_win': True, 'total_trades': True
+        }
+        
+        # Calculate differences and determine winners
+        run1_wins = 0
+        run2_wins = 0
+        ties = 0
+        
         for metric in metrics1:
             if metric in metrics2:
                 diff = metrics2[metric] - metrics1[metric]
+                is_higher_better = higher_is_better.get(metric, True)  # Default to higher is better
+                
+                # Determine winner based on metric type
+                if abs(diff) < 0.0001:  # Essentially equal (floating point tolerance)
+                    winner = 'tie'
+                    ties += 1
+                elif is_higher_better:
+                    winner = 'run2' if diff > 0 else 'run1'
+                    if winner == 'run2':
+                        run2_wins += 1
+                    else:
+                        run1_wins += 1
+                else:
+                    # Lower is better (e.g., max_drawdown, volatility)
+                    winner = 'run1' if diff > 0 else 'run2'
+                    if winner == 'run2':
+                        run2_wins += 1
+                    else:
+                        run1_wins += 1
+                
                 comparison['differences'][metric] = {
                     'run1': metrics1[metric],
                     'run2': metrics2[metric],
                     'difference': diff,
-                    'winner': 'run2' if diff > 0 else 'run1' if diff < 0 else 'tie'
+                    'winner': winner,
+                    'higher_is_better': is_higher_better
                 }
+        
+        # Determine overall winner
+        if run1_wins > run2_wins:
+            overall_winner = 'run1'
+        elif run2_wins > run1_wins:
+            overall_winner = 'run2'
+        else:
+            overall_winner = 'tie'
+        
+        comparison['overall_winner'] = overall_winner
+        comparison['score'] = {
+            'run1_wins': run1_wins,
+            'run2_wins': run2_wins,
+            'ties': ties
+        }
         
         # Align equity curves for overlay
         equity1 = run1['equity_curve']
@@ -423,6 +497,55 @@ def list_tickers():
         })
     except Exception as e:
         logger.error(f"Error listing tickers: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/tickers/search', methods=['GET'])
+def search_tickers():
+    """Search for tickers (existing or lookup new)."""
+    try:
+        query = request.args.get('q', '').strip().upper()
+        if not query:
+            return jsonify({'success': True, 'tickers': []})
+        
+        # First, search existing tickers in registry
+        all_tickers = data_fetcher.list_tickers()
+        matching_existing = [
+            t for t in all_tickers 
+            if query in t.get('ticker', '').upper() or query in t.get('company_name', '').upper()
+        ]
+        
+        # If we have matches, return them
+        if matching_existing:
+            return jsonify({
+                'success': True,
+                'tickers': matching_existing[:20],  # Limit to 20 results
+                'source': 'registry'
+            })
+        
+        # If no matches in registry, try to lookup the ticker
+        # This will validate and add it if valid
+        try:
+            valid, invalid = data_fetcher.validate_tickers([query])
+            if valid and query in valid:
+                # Get the newly added ticker info
+                ticker_info = data_fetcher.get_ticker_info(query)
+                if ticker_info:
+                    return jsonify({
+                        'success': True,
+                        'tickers': [ticker_info],
+                        'source': 'lookup'
+                    })
+        except Exception as e:
+            logger.debug(f"Ticker lookup failed for {query}: {e}")
+        
+        return jsonify({
+            'success': True,
+            'tickers': [],
+            'source': 'none'
+        })
+    except Exception as e:
+        logger.error(f"Error searching tickers: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

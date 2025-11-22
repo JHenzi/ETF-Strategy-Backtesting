@@ -51,11 +51,19 @@ class LaggardRotationStrategy(BaseStrategy):
         logger.info(f"Asset returns (worst to best): {[(t, f'{r:.2f}%') for t, r in sorted_assets]}")
         
         # Select bottom N laggards
-        laggards = [ticker for ticker, _ in sorted_assets[:self.laggard_count]]
-        logger.info(f"Selected laggards: {laggards}")
+        # If laggard_count is 1 or not specified, buy ALL laggards (all worst performers)
+        # Otherwise, buy the specified number of laggards
+        if self.laggard_count <= 1 or self.laggard_count >= len(sorted_assets):
+            # Buy all laggards (all assets in universe)
+            laggards = [ticker for ticker, _ in sorted_assets]
+            logger.info(f"Buying ALL laggards (all {len(laggards)} assets) - equal allocation")
+        else:
+            # Buy bottom N laggards
+            laggards = [ticker for ticker, _ in sorted_assets[:self.laggard_count]]
+            logger.info(f"Selected {len(laggards)} laggards: {laggards}")
         
         # Accumulation strategy: Only buy laggards, never sell
-        # Buy laggards (whether we already hold them or not - accumulate positions)
+        # Buy ALL selected laggards and split cash equally among them
         for ticker in laggards:
             # Check cooldown before buying
             if self.is_in_cooldown(ticker, current_date, self.cooldown_days):
@@ -65,13 +73,13 @@ class LaggardRotationStrategy(BaseStrategy):
             signals.append({
                 'ticker': ticker,
                 'action': 'BUY',
-                'amount': None,  # Will be split equally across all buys
+                'amount': None,  # Will be split equally across all buys by engine
                 'reason': f'Laggard rotation (return: {asset_returns[ticker]:.2f}%)'
             })
             self.current_positions.add(ticker)
             self.record_trade(ticker, current_date)
             logger.info(f"Signal to BUY {ticker} - laggard with {asset_returns[ticker]:.2f}% return")
         
-        logger.info(f"Generated {len(signals)} BUY signals for accumulation")
+        logger.info(f"Generated {len(signals)} BUY signals - cash will be split equally (${len(signals)} ways)")
         return signals
 

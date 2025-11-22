@@ -56,6 +56,42 @@ A user can:
 
 **Priority**: Medium - Current text input works but could be much better.
 
+**Implementation Notes**:
+- Could use existing `/api/tickers/list` endpoint for discovered tickers
+- Could use existing `/api/tickers/validate` endpoint for validation
+- UI could be a modal or inline component with search, filters, and checkboxes
+
+---
+
+## Feature Completeness Roadmap
+
+### Current State (November 2025)
+
+**✅ Fully Implemented & Working**:
+- Laggard Rotation strategy (accumulation, cash splitting, QQQ comparison)
+- QQQ baseline comparison (simulation + chart display)
+- Recurring reinvestment support (backend + UI)
+- Cash allocation (equal split across all buy orders)
+- Beautiful results page with charts and metrics
+- Strategy Builder UI
+- Ticker validation and caching
+
+**⚠️ Needs Updates to Match Laggard Rotation Standard**:
+- Momentum Winner: Update to buy all winners when `winner_count <= 1`
+- Mixed Winners/Losers: Verify cash splitting works correctly
+- Buy and Hold: Verify QQQ comparison and reinvestments
+- DCA: Verify cash splitting and QQQ comparison
+
+**⚠️ In Progress**:
+- QQQ metrics display in results table (calculated but not shown in UI table)
+- End-to-end testing of all features
+
+**📋 Planned**:
+- Enhanced stock picker UI (checkbox selection)
+- Comprehensive test suite
+- Custom benchmark selection (beyond QQQ)
+- Additional strategies (RSI, SMA crossover, etc.)
+
 ---
 
 ## Current Problem: Zero Results in Backtests
@@ -235,19 +271,24 @@ WARNING:backtest_engine.strategies.builtin.laggard_rotation:No asset returns cal
 - ✅ Phase 5: QQQ baseline comparison implemented in engine
 - ✅ Beautiful results page with charts and metrics
 - ✅ Fixed strategies to be accumulation-only (no selling)
-- ✅ Added recurring reinvestment support
+- ✅ Added recurring reinvestment support (backend + UI)
+- ✅ Fixed QQQ chart alignment by date
+- ✅ Fixed cash allocation to split equally across all buy orders
+- ✅ Updated laggard_rotation to buy ALL laggards when `laggard_count <= 1`
 
 **In Progress**:
-- ⚠️ QQQ chart display on results page (data saved but chart not rendering correctly)
-- ⚠️ Recurring reinvestment UI integration (backend ready, UI needs testing)
+- ⚠️ Feature parity: Update other strategies to match laggard_rotation standards
+- ⚠️ QQQ metrics display in results table (data calculated, needs UI display)
+- ⚠️ End-to-end testing of recurring reinvestments with all strategies
 
 **Next Steps**:
 1. ✅ Test the fixes with laggard_rotation strategy - **DONE**
 2. ✅ Verify trades are now executing - **DONE**
 3. ✅ Implement QQQ baseline comparison - **DONE**
-4. ⚠️ Fix QQQ chart rendering on results page
+4. ✅ Fix QQQ chart rendering on results page - **DONE**
 5. ⚠️ Test recurring reinvestment feature end-to-end
 6. ⚠️ Add comprehensive test suite
+7. ⚠️ **Feature Parity**: Update all other strategies to match laggard_rotation standards (see TODOs below)
 
 ### Debugging Checklist
 
@@ -319,7 +360,7 @@ A working backtest should show:
 5. Display QQQ equity curve alongside strategy curve
 6. Show "Did strategy beat QQQ?" indicator
 
-**Current Status**: ⚠️ **IN PROGRESS** - QQQ baseline calculation and chart display fixes in progress.
+**Current Status**: ⚠️ **IN PROGRESS** - QQQ baseline calculation complete, chart date alignment being fixed.
 
 **Implementation Details**:
 - ✅ Engine fetches QQQ data
@@ -327,7 +368,10 @@ A working backtest should show:
 - ✅ Relative performance calculated (strategy return - QQQ return)
 - ✅ QQQ equity curve saved in metadata
 - ✅ **FIXED**: QQQ now simulates with same investment pattern as strategy (reinvestments, contributions)
-- ✅ **FIXED**: Chart alignment by date (both datasets use same date keys)
+- ⚠️ **FIXING**: Chart date alignment - QQQ dates need to match strategy date format (YYYY-MM-DD strings)
+  - **Issue**: QQQ data may have dates in different format (integers, timestamps) causing side-by-side display
+  - **Solution**: Normalize all dates to YYYY-MM-DD format when saving and loading
+  - **Solution**: Use same date array for both traces in Plotly chart
 - ⚠️ **TESTING**: Need to verify QQQ comparison works correctly with various strategies
 
 **How QQQ Comparison Works**:
@@ -337,7 +381,112 @@ A working backtest should show:
 4. Both portfolios tracked day-by-day with same date alignment
 5. Metrics calculated for both and compared
 
+**Current Issue: Chart Date Alignment**:
+- **Problem**: QQQ and strategy curves showing side-by-side instead of overlaid
+- **Root Cause**: Date formats not matching (QQQ may have integers/timestamps, strategy has date strings)
+- **Solution Being Applied**:
+  1. Normalize all dates to YYYY-MM-DD format when saving (persistence layer)
+  2. Normalize dates when loading from database (API layer)
+  3. Normalize dates in chart rendering (extract YYYY-MM-DD from any format)
+  4. Use same date array for both Plotly traces (x-axis alignment)
+  5. Set Plotly xaxis type to 'date' for proper date handling
+
 **Next Steps**:
-1. Test with buy_and_hold strategy to verify QQQ comparison is fair
-2. Verify chart displays both curves properly aligned
-3. Add QQQ comparison metrics to results table
+1. ✅ Test with buy_and_hold strategy to verify QQQ comparison is fair - **DONE**
+2. ⚠️ **FIXING**: Verify chart displays both curves properly aligned by date
+3. ⚠️ Add QQQ comparison metrics to results table (show QQQ metrics alongside strategy metrics)
+
+---
+
+## Feature Parity & Standardization TODOs
+
+To bring all strategies up to the same standard as `laggard_rotation`, the following work is needed:
+
+### Strategy Updates Required
+
+#### 1. **Momentum Winner Strategy** (`momentum_winner.py`)
+- ✅ **DONE**: Changed to accumulation-only (no selling)
+- ⚠️ **TODO**: Update to buy ALL winners when `winner_count <= 1` (match laggard_rotation behavior)
+- ⚠️ **TODO**: Ensure cash splitting works correctly for multiple winners
+- ⚠️ **TODO**: Test with recurring reinvestments
+
+#### 2. **Mixed Winners/Losers Strategy** (`mixed_winners_losers.py`)
+- ✅ **DONE**: Changed to accumulation-only (no selling)
+- ⚠️ **TODO**: Verify cash splitting works correctly (winners + laggards)
+- ⚠️ **TODO**: Test with recurring reinvestments
+
+#### 3. **Buy and Hold Strategy** (`buy_and_hold.py`)
+- ✅ **DONE**: Already accumulation-only (by design)
+- ⚠️ **TODO**: Verify QQQ comparison works correctly
+- ⚠️ **TODO**: Test with recurring reinvestments (should reinvest in same assets)
+
+#### 4. **DCA Strategy** (`dca.py`)
+- ⚠️ **TODO**: Verify cash splitting works correctly across all assets
+- ⚠️ **TODO**: Test with recurring contributions (should match contribution schedule)
+- ⚠️ **TODO**: Verify QQQ comparison works correctly
+
+### Engine & Infrastructure Updates
+
+#### 5. **QQQ Comparison Standardization**
+- ✅ **DONE**: QQQ simulation matches strategy investment pattern
+- ⚠️ **FIXING**: QQQ chart date alignment (dates must be same format for overlay)
+  - Normalize dates to YYYY-MM-DD when saving
+  - Normalize dates when loading/API response
+  - Normalize dates in chart rendering
+  - Use same date array for both traces
+- ⚠️ **TODO**: Add QQQ metrics to results table (display alongside strategy metrics)
+- ⚠️ **TODO**: Add QQQ comparison section to results page (side-by-side metrics)
+- ⚠️ **TODO**: Test QQQ comparison with all strategy types
+
+#### 6. **Cash Allocation Verification**
+- ✅ **DONE**: Cash splitting logic implemented
+- ⚠️ **TODO**: Verify all strategies split cash correctly
+- ⚠️ **TODO**: Test edge cases (single stock, many stocks, varying cash amounts)
+
+#### 7. **Recurring Reinvestment Testing**
+- ✅ **DONE**: Backend support for recurring contributions
+- ✅ **DONE**: UI fields for reinvestment amount/frequency
+- ⚠️ **TODO**: End-to-end testing with all strategy types
+- ⚠️ **TODO**: Verify contributions align with rebalance schedule
+
+### Documentation Updates
+
+#### 8. **Strategy Documentation**
+- ✅ **DONE**: Updated laggard_rotation in Predefined Strategies.md
+- ⚠️ **TODO**: Update momentum_winner documentation
+- ⚠️ **TODO**: Update mixed_winners_losers documentation
+- ⚠️ **TODO**: Update all example YAML files with correct format
+
+#### 9. **User Guide**
+- ⚠️ **TODO**: Document how `laggard_count: 0` means "buy all"
+- ⚠️ **TODO**: Document recurring reinvestment feature
+- ⚠️ **TODO**: Document QQQ comparison feature
+- ⚠️ **TODO**: Add examples showing cash allocation behavior
+
+### Testing & Quality Assurance
+
+#### 10. **Comprehensive Testing**
+- ⚠️ **TODO**: Create test suite for all strategies
+- ⚠️ **TODO**: Test cash allocation with various scenarios
+- ⚠️ **TODO**: Test QQQ comparison with all strategies
+- ⚠️ **TODO**: Test recurring reinvestments with all strategies
+- ⚠️ **TODO**: Regression tests to prevent zero-results bug from returning
+
+### Priority Order
+
+**HIGH PRIORITY** (Feature Completeness):
+1. Update momentum_winner to buy all winners when `winner_count <= 1`
+2. Add QQQ metrics to results table
+3. Test recurring reinvestments end-to-end
+4. Verify cash allocation works for all strategies
+
+**MEDIUM PRIORITY** (Polish & Documentation):
+5. Update all strategy documentation
+6. Update example YAML files
+7. Create comprehensive test suite
+8. Add user guide sections
+
+**LOW PRIORITY** (Nice to Have):
+9. Custom benchmark selection (beyond QQQ)
+10. Enhanced visualizations
+11. Export functionality

@@ -23,10 +23,13 @@ Each strategy describes:
 
 * Compute percent return for each asset over a defined lookback window (e.g., 5, 10, 20 days).
 * Rank assets from worst → best.
-* Select the bottom N assets (default 1).
+* **Selection Logic**:
+  - If `laggard_count <= 1` or `laggard_count >= universe_size`: Buy **ALL** laggards (all assets in universe)
+  - Otherwise: Buy bottom N laggards (where N = `laggard_count`)
 * Only buy if the asset is not in a cooldown period.
-* Allocate equal fractions of available cash across selections.
-* Hold until next rebalance period.
+* **Accumulation Strategy**: Only buy, never sell - accumulate positions over time.
+* **Cash Allocation**: Available cash is divided equally across all selected laggards.
+* Rebalance on schedule (weekly, monthly, etc.) and reinvest contributions.
 
 ## **Signals / Requirements**
 
@@ -40,19 +43,28 @@ Each strategy describes:
 
 ```yaml
 name: laggard_rotation
-lookback_days: 10
-rebalance_frequency: weekly
-laggard_count: 1
-cooldown_days: 20
+description: "Buy the worst performing assets (mean reversion)"
 universe:
   - XLP
   - XLY
   - XLK
   - XLE
   - XLF
+parameters:
+  lookback_days: 20
+  laggard_count: 0  # 0 or 1 = buy ALL laggards, >1 = buy that many laggards
+  cooldown_days: 30
+rebalance_frequency: weekly
 position_sizing: equal_weight
 execution: next_open
 ```
+
+**Notes**:
+- `laggard_count: 0` or `1` means buy ALL laggards (all assets in universe)
+- `laggard_count > 1` means buy only that many worst performers
+- Cash is automatically split equally across all selected laggards
+- Strategy accumulates positions (never sells) - builds portfolio over time
+- Works with recurring reinvestments (weekly/monthly contributions)
 
 ---
 
@@ -64,8 +76,12 @@ execution: next_open
 
 * Compute momentum = percent return over lookback period.
 * Rank assets from best → worst.
-* Buy top N assets.
-* Rebalance periodically.
+* **Selection Logic**:
+  - If `winner_count <= 1`: Buy **ALL** winners (all assets in universe)
+  - Otherwise: Buy top N winners (where N = `winner_count`)
+* **Accumulation Strategy**: Only buy, never sell - accumulate positions over time.
+* **Cash Allocation**: Available cash is divided equally across all selected winners.
+* Rebalance periodically and reinvest contributions.
 * Cooldown optional.
 
 ## **Example YAML**
@@ -96,8 +112,9 @@ execution: next_open
 * Compute momentum/returns for lookback period.
 * Select top N winners.
 * Select bottom M laggards.
-* Allocate equally across all selected assets.
-* Rebalance.
+* **Accumulation Strategy**: Only buy, never sell - accumulate positions over time.
+* **Cash Allocation**: Available cash is divided equally across all selected assets (winners + laggards).
+* Rebalance periodically and reinvest contributions.
 
 ## **Example YAML**
 

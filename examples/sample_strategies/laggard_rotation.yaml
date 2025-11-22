@@ -8,7 +8,7 @@ universe:
   - XLF
 parameters:
   lookback_days: 20
-  laggard_count: 1
+  laggard_count: 0  # 0 or 1 = buy ALL laggards, >1 = buy that many laggards
   cooldown_days: 30
 rebalance_frequency: weekly
 position_sizing: equal_weight

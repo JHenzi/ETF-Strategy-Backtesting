@@ -8,6 +8,24 @@
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body class="bg-gray-100">
+    <script>
+        // API base path - automatically detect if app is served from a subdirectory (e.g., /back)
+        // Extract base path by removing filename and trailing slashes
+        (function() {
+            const pathname = window.location.pathname;
+            if (pathname === '/' || pathname === '') {
+                window.API_BASE = '';
+            } else {
+                // Remove trailing slash, then remove last segment (filename), then add back leading slash
+                const parts = pathname.replace(/\/$/, '').split('/').filter(p => p);
+                // If there's more than one part, remove the last one (filename), otherwise keep it (it's the base path)
+                if (parts.length > 1) {
+                    parts.pop(); // Remove filename
+                }
+                window.API_BASE = parts.length > 0 ? '/' + parts.join('/') : '';
+            }
+        })();
+    </script>
     <div class="container mx-auto px-4 py-8">
         <h1 class="text-4xl font-bold mb-8 text-gray-800">Stock/ETF Backtesting Engine</h1>
         
@@ -144,13 +162,31 @@ execution: first_day_only
                     <!-- Asset Universe -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">Asset Universe (Tickers)</label>
-                        <div class="flex space-x-2 mb-2">
-                            <input type="text" id="builder-ticker-input" placeholder="Enter ticker (e.g., SPY)" class="flex-1 border border-gray-300 rounded-md p-2" onkeypress="if(event.key==='Enter'){event.preventDefault();addTicker();}">
-                            <button type="button" onclick="addTicker()" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Add</button>
-                            <button type="button" onclick="validateTickers()" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">Validate All</button>
+                        <div class="relative mb-2">
+                            <input 
+                                type="text" 
+                                id="builder-ticker-input" 
+                                placeholder="Search ticker symbol or company name (e.g., XLP, SPY, Apple)" 
+                                class="w-full border border-gray-300 rounded-md p-2 pr-10" 
+                                autocomplete="off"
+                                oninput="searchTickers(this.value)"
+                                onkeydown="handleTickerInputKeydown(event)"
+                                onfocus="showTickerDropdown()"
+                                onblur="hideTickerDropdown()"
+                            >
+                            <div id="ticker-search-loading" class="absolute right-3 top-2.5 text-gray-400 hidden">
+                                <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            </div>
+                            <!-- Dropdown for search results -->
+                            <div id="ticker-search-dropdown" class="hidden absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                                <div id="ticker-search-results" class="py-1"></div>
+                            </div>
                         </div>
-                        <div id="builder-tickers-list" class="flex flex-wrap gap-2 mb-2"></div>
-                        <button type="button" onclick="loadTickerLibrary()" class="text-sm text-blue-600 hover:underline">Browse discovered tickers...</button>
+                        <div id="builder-tickers-list" class="flex flex-wrap gap-2 mb-2 min-h-[2rem]"></div>
+                        <p class="text-xs text-gray-500 mt-1">Type to search existing tickers or add new ones. Selected tickers will be validated automatically.</p>
                     </div>
                     
                     <!-- Strategy-specific parameters -->
@@ -292,92 +328,260 @@ execution: first_day_only
                 loadRunsForCompare();
             } else if (tabName === 'builder') {
                 updateBuilderForm();
+                loadTickerInfoForExisting();
                 generateYAML();
             }
         }
         
-        // Strategy Builder Functions
-        function addTicker() {
+        // Strategy Builder Functions - Type-ahead ticker search
+        let tickerSearchTimeout = null;
+        let tickerSearchResults = [];
+        let selectedSearchIndex = -1;
+        
+        // Store ticker info (ticker -> {ticker, company_name, asset_type})
+        let tickerInfoMap = {};
+        
+        // Load ticker info for existing tickers when builder tab opens
+        async function loadTickerInfoForExisting() {
+            if (builderTickers.length === 0) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/tickers/list`);
+                const result = await response.json();
+                
+                if (result.success && result.tickers) {
+                    result.tickers.forEach(tickerData => {
+                        if (builderTickers.includes(tickerData.ticker)) {
+                            tickerInfoMap[tickerData.ticker] = tickerData;
+                        }
+                    });
+                    updateTickerList();
+                }
+            } catch (error) {
+                console.error('Error loading ticker info:', error);
+            }
+        }
+        
+        async function searchTickers(query) {
+            const trimmed = query.trim();
+            if (!trimmed) {
+                hideTickerDropdown();
+                return;
+            }
+            
+            // Clear previous timeout
+            if (tickerSearchTimeout) {
+                clearTimeout(tickerSearchTimeout);
+            }
+            
+            // Debounce search
+            tickerSearchTimeout = setTimeout(async () => {
+                const loadingEl = document.getElementById('ticker-search-loading');
+                const dropdown = document.getElementById('ticker-search-dropdown');
+                const resultsEl = document.getElementById('ticker-search-results');
+                
+                loadingEl.classList.remove('hidden');
+                dropdown.classList.remove('hidden');
+                resultsEl.innerHTML = '<div class="px-3 py-2 text-sm text-gray-500">Searching...</div>';
+                
+                try {
+                    const response = await fetch(`${API_BASE}/api/tickers/search?q=${encodeURIComponent(trimmed)}`);
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        tickerSearchResults = result.tickers || [];
+                        selectedSearchIndex = -1;
+                        
+                        if (tickerSearchResults.length === 0) {
+                            resultsEl.innerHTML = '<div class="px-3 py-2 text-sm text-gray-500">No tickers found. Press Enter to validate and add.</div>';
+                        } else {
+                            resultsEl.innerHTML = tickerSearchResults.map((ticker, idx) => {
+                                const displayName = ticker.company_name || ticker.ticker;
+                                const assetType = ticker.asset_type || 'Stock';
+                                return `
+                                    <div 
+                                        class="px-3 py-2 hover:bg-blue-50 cursor-pointer ticker-search-result ${idx === 0 ? 'bg-blue-50' : ''}"
+                                        data-index="${idx}"
+                                        onclick="selectTickerFromSearch(${idx})"
+                                        onmouseenter="highlightSearchResult(${idx})"
+                                    >
+                                        <div class="flex justify-between items-center">
+                                            <div>
+                                                <span class="font-semibold text-blue-700">${ticker.ticker}</span>
+                                                <span class="text-sm text-gray-600 ml-2">${displayName}</span>
+                                            </div>
+                                            <span class="text-xs text-gray-500">${assetType}</span>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('');
+                        }
+                    } else {
+                        resultsEl.innerHTML = '<div class="px-3 py-2 text-sm text-red-500">Error: ' + (result.error || 'Unknown error') + '</div>';
+                    }
+                } catch (error) {
+                    resultsEl.innerHTML = '<div class="px-3 py-2 text-sm text-red-500">Error searching: ' + error.message + '</div>';
+                } finally {
+                    loadingEl.classList.add('hidden');
+                }
+            }, 300); // 300ms debounce
+        }
+        
+        function highlightSearchResult(index) {
+            selectedSearchIndex = index;
+            document.querySelectorAll('.ticker-search-result').forEach((el, idx) => {
+                if (idx === index) {
+                    el.classList.add('bg-blue-50');
+                } else {
+                    el.classList.remove('bg-blue-50');
+                }
+            });
+        }
+        
+        function showTickerDropdown() {
             const input = document.getElementById('builder-ticker-input');
-            const ticker = input.value.trim().toUpperCase();
-            if (ticker && !builderTickers.includes(ticker)) {
-                builderTickers.push(ticker);
-                updateTickerList();
-                input.value = '';
-                generateYAML();
+            if (input.value.trim() && tickerSearchResults.length > 0) {
+                document.getElementById('ticker-search-dropdown').classList.remove('hidden');
+            }
+        }
+        
+        function hideTickerDropdown() {
+            // Delay to allow click events to fire
+            setTimeout(() => {
+                document.getElementById('ticker-search-dropdown').classList.add('hidden');
+            }, 200);
+        }
+        
+        async function selectTickerFromSearch(index) {
+            if (index < 0 || index >= tickerSearchResults.length) return;
+            
+            const tickerData = tickerSearchResults[index];
+            await addTickerFromData(tickerData);
+        }
+        
+        async function addTickerFromData(tickerData) {
+            const ticker = tickerData.ticker.toUpperCase();
+            
+            // Check if already added
+            if (builderTickers.includes(ticker)) {
+                // Just clear input
+                document.getElementById('builder-ticker-input').value = '';
+                hideTickerDropdown();
+                return;
+            }
+            
+            // Store ticker info
+            tickerInfoMap[ticker] = {
+                ticker: ticker,
+                company_name: tickerData.company_name || ticker,
+                asset_type: tickerData.asset_type || 'Stock'
+            };
+            
+            // Add to list
+            builderTickers.push(ticker);
+            updateTickerList();
+            document.getElementById('builder-ticker-input').value = '';
+            hideTickerDropdown();
+            generateYAML();
+        }
+        
+        function handleTickerInputKeydown(event) {
+            const dropdown = document.getElementById('ticker-search-dropdown');
+            const results = tickerSearchResults;
+            
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                if (selectedSearchIndex >= 0 && selectedSearchIndex < results.length) {
+                    // Select highlighted result
+                    selectTickerFromSearch(selectedSearchIndex);
+                } else if (results.length > 0) {
+                    // Select first result
+                    selectTickerFromSearch(0);
+                } else {
+                    // Try to validate and add the typed value
+                    const input = document.getElementById('builder-ticker-input');
+                    const query = input.value.trim().toUpperCase();
+                    if (query) {
+                        validateAndAddTicker(query);
+                    }
+                }
+            } else if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                if (results.length > 0) {
+                    selectedSearchIndex = Math.min(selectedSearchIndex + 1, results.length - 1);
+                    highlightSearchResult(selectedSearchIndex);
+                    const resultEl = document.querySelectorAll('.ticker-search-result')[selectedSearchIndex];
+                    if (resultEl) {
+                        resultEl.scrollIntoView({ block: 'nearest' });
+                    }
+                }
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (results.length > 0) {
+                    selectedSearchIndex = Math.max(selectedSearchIndex - 1, -1);
+                    if (selectedSearchIndex >= 0) {
+                        highlightSearchResult(selectedSearchIndex);
+                        const resultEl = document.querySelectorAll('.ticker-search-result')[selectedSearchIndex];
+                        if (resultEl) {
+                            resultEl.scrollIntoView({ block: 'nearest' });
+                        }
+                    }
+                }
+            } else if (event.key === 'Escape') {
+                hideTickerDropdown();
+            }
+        }
+        
+        async function validateAndAddTicker(ticker) {
+            try {
+                const response = await fetch(`${API_BASE}/api/tickers/validate`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({tickers: [ticker]})
+                });
+                
+                const result = await response.json();
+                if (result.success && result.valid && result.valid.length > 0) {
+                    const tickerInfo = result.ticker_info && result.ticker_info[0];
+                    if (tickerInfo) {
+                        await addTickerFromData(tickerInfo);
+                    } else {
+                        // Fallback if no info returned
+                        await addTickerFromData({ticker: ticker, company_name: ticker, asset_type: 'Stock'});
+                    }
+                } else {
+                    alert(`Ticker "${ticker}" is not valid or could not be found.`);
+                }
+            } catch (error) {
+                alert('Error validating ticker: ' + error.message);
             }
         }
         
         function removeTicker(ticker) {
             builderTickers = builderTickers.filter(t => t !== ticker);
+            delete tickerInfoMap[ticker];
             updateTickerList();
             generateYAML();
         }
         
         function updateTickerList() {
             const container = document.getElementById('builder-tickers-list');
-            container.innerHTML = builderTickers.map(ticker => `
-                <span class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800">
-                    ${ticker}
-                    <button onclick="removeTicker('${ticker}')" class="ml-2 text-blue-600 hover:text-blue-800">×</button>
-                </span>
-            `).join('');
-        }
-        
-        async function validateTickers() {
             if (builderTickers.length === 0) {
-                alert('Please add tickers first');
+                container.innerHTML = '<p class="text-sm text-gray-400 italic">No tickers selected</p>';
                 return;
             }
             
-            try {
-                const response = await fetch('/api/tickers/validate', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({tickers: builderTickers})
-                });
-                
-                const result = await response.json();
-                if (result.success) {
-                    if (result.invalid.length > 0) {
-                        alert('Invalid tickers: ' + result.invalid.join(', '));
-                        builderTickers = builderTickers.filter(t => !result.invalid.includes(t));
-                        updateTickerList();
-                    } else {
-                        alert('All tickers validated successfully!');
-                    }
-                    generateYAML();
-                }
-            } catch (error) {
-                alert('Error validating tickers: ' + error.message);
-            }
-        }
-        
-        async function loadTickerLibrary() {
-            try {
-                const response = await fetch('/api/tickers/list');
-                const result = await response.json();
-                
-                if (result.success && result.tickers.length > 0) {
-                    const tickerList = result.tickers.map(t => 
-                        `${t.ticker} - ${t.company_name} (${t.asset_type})`
-                    ).join('\n');
-                    
-                    const selected = prompt('Available tickers:\n\n' + tickerList + '\n\nEnter ticker to add:');
-                    if (selected) {
-                        const ticker = selected.split(' - ')[0].trim().toUpperCase();
-                        if (!builderTickers.includes(ticker)) {
-                            builderTickers.push(ticker);
-                            updateTickerList();
-                            generateYAML();
-                        }
-                    }
-                } else {
-                    alert('No tickers discovered yet. Add tickers in a strategy and they will be cached.');
-                }
-            } catch (error) {
-                alert('Error loading ticker library: ' + error.message);
-            }
+            container.innerHTML = builderTickers.map(ticker => {
+                const info = tickerInfoMap[ticker] || {ticker: ticker, company_name: ticker, asset_type: 'Stock'};
+                const displayName = info.company_name || ticker;
+                return `
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800" title="${displayName}">
+                        <span class="font-semibold">${ticker}</span>
+                        ${displayName !== ticker ? `<span class="ml-2 text-xs text-blue-600">${displayName}</span>` : ''}
+                        <button onclick="removeTicker('${ticker}')" class="ml-2 text-blue-600 hover:text-blue-800 font-bold" title="Remove">×</button>
+                    </span>
+                `;
+            }).join('');
         }
         
         function updateBuilderForm() {
@@ -552,7 +756,7 @@ execution: first_day_only
             };
             
             try {
-                const response = await fetch('/api/backtest/run', {
+                const response = await fetch(`${API_BASE}/api/backtest/run`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(data)
@@ -583,7 +787,7 @@ execution: first_day_only
             }
             
             try {
-                const response = await fetch('/api/backtest/validate', {
+                    const response = await fetch(`${API_BASE}/api/backtest/validate`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
@@ -615,7 +819,7 @@ execution: first_day_only
             
             jobCheckInterval = setInterval(async () => {
                 try {
-                    const response = await fetch(`/api/jobs/${jobId}`);
+                    const response = await fetch(`${API_BASE}/api/jobs/${jobId}`);
                     const result = await response.json();
                     
                     if (result.success) {
@@ -655,7 +859,7 @@ execution: first_day_only
         // Load runs
         async function loadRuns() {
             try {
-                const response = await fetch('/api/runs');
+                const response = await fetch(`${API_BASE}/api/runs`);
                 const result = await response.json();
                 
                 if (result.success) {
@@ -696,7 +900,7 @@ execution: first_day_only
         // View run details
         async function viewRun(runId) {
             try {
-                const response = await fetch(`/api/runs/${runId}`);
+                const response = await fetch(`${API_BASE}/api/runs/${runId}`);
                 const result = await response.json();
                 
                 if (result.success) {
@@ -863,20 +1067,35 @@ execution: first_day_only
             
             // Draw equity curve chart
             if (equityCurve.length > 0) {
-                // Build strategy data with date as key for alignment
+                // Normalize date format for strategy data
                 const strategyData = {};
                 equityCurve.forEach(e => {
                     if (typeof e === 'object' && e !== null) {
-                        const date = e.date || e.Date || (e.index ? e.index : '');
-                        const value = e.total_value || e.TotalValue || e.totalValue || 0;
+                        let date = e.date || e.Date || '';
+                        // Normalize date to YYYY-MM-DD format
                         if (date) {
-                            strategyData[date] = value;
+                            // Handle various date formats
+                            if (typeof date === 'string') {
+                                // Extract date part if it includes time
+                                date = date.split('T')[0].split(' ')[0];
+                            } else if (date instanceof Date) {
+                                date = date.toISOString().split('T')[0];
+                            }
+                            const value = e.total_value || e.TotalValue || e.totalValue || 0;
+                            if (date && date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                strategyData[date] = value;
+                            }
                         }
                     }
                 });
                 
-                // Get all unique dates and sort
+                // Get all unique dates and sort (YYYY-MM-DD format)
                 const allDates = Object.keys(strategyData).sort();
+                
+                if (allDates.length === 0) {
+                    console.error('No valid dates found in strategy equity curve');
+                    return;
+                }
                 
                 const strategyValues = allDates.map(d => strategyData[d] || 0);
                 
@@ -895,27 +1114,39 @@ execution: first_day_only
                 if (qqqData && Array.isArray(qqqData) && qqqData.length > 0) {
                     console.log('QQQ data found:', qqqData.length, 'points');
                     
-                    // Build QQQ data with date as key
+                    // Build QQQ data with normalized date as key
                     const qqqDataMap = {};
                     qqqData.forEach(e => {
                         if (typeof e === 'object' && e !== null) {
-                            const date = e.date || e.Date || (e.index ? e.index : '');
-                            const value = e.total_value || e.TotalValue || e.totalValue || 0;
+                            let date = e.date || e.Date || '';
+                            // Normalize date to YYYY-MM-DD format (same as strategy)
                             if (date) {
-                                qqqDataMap[date] = value;
+                                if (typeof date === 'string') {
+                                    // Extract date part if it includes time
+                                    date = date.split('T')[0].split(' ')[0];
+                                } else if (date instanceof Date) {
+                                    date = date.toISOString().split('T')[0];
+                                }
+                                const value = e.total_value || e.TotalValue || e.totalValue || 0;
+                                if (date && date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+                                    qqqDataMap[date] = value;
+                                }
                             }
                         }
                     });
                     
                     // Align QQQ values with strategy dates (use same date array)
-                    const qqqValues = allDates.map(d => qqqDataMap[d] || null);
+                    const qqqValues = allDates.map(d => {
+                        const val = qqqDataMap[d];
+                        return (val !== undefined && val !== null) ? val : null;
+                    });
                     
                     // Only add QQQ trace if we have valid data
                     const validQqqValues = qqqValues.filter(v => v !== null && v !== undefined);
                     if (validQqqValues.length > 0) {
-                        console.log('Adding QQQ trace with', validQqqValues.length, 'valid points');
+                        console.log('Adding QQQ trace with', validQqqValues.length, 'valid points out of', allDates.length, 'total dates');
                         traces.push({
-                            x: allDates,
+                            x: allDates,  // Use same date array as strategy
                             y: qqqValues,
                             type: 'scatter',
                             mode: 'lines',
@@ -924,7 +1155,7 @@ execution: first_day_only
                             connectgaps: false  // Don't connect gaps where data is missing
                         });
                     } else {
-                        console.log('QQQ data exists but no valid values found');
+                        console.log('QQQ data exists but no matching dates found. Strategy dates:', allDates.slice(0, 5), '... QQQ dates:', Object.keys(qqqDataMap).slice(0, 5));
                     }
                 } else {
                     console.log('No QQQ data found in run object');
@@ -932,7 +1163,10 @@ execution: first_day_only
                 
                 Plotly.newPlot('equity-chart', traces, {
                     title: 'Portfolio Value Over Time',
-                    xaxis: { title: 'Date' },
+                    xaxis: { 
+                        title: 'Date',
+                        type: 'date'  // Tell Plotly to treat as dates
+                    },
                     yaxis: { title: 'Portfolio Value ($)' },
                     hovermode: 'x unified',
                     showlegend: true,
@@ -1024,7 +1258,7 @@ execution: first_day_only
             if (!confirm('Are you sure you want to delete this run?')) return;
             
             try {
-                const response = await fetch(`/api/runs/${runId}`, {method: 'DELETE'});
+                const response = await fetch(`${API_BASE}/api/runs/${runId}`, {method: 'DELETE'});
                 const result = await response.json();
                 
                 if (result.success) {
@@ -1046,7 +1280,7 @@ execution: first_day_only
         // Load runs for comparison
         async function loadRunsForCompare() {
             try {
-                const response = await fetch('/api/runs');
+                const response = await fetch(`${API_BASE}/api/runs`);
                 const result = await response.json();
                 
                 if (result.success) {
@@ -1077,7 +1311,7 @@ execution: first_day_only
             }
             
             try {
-                const response = await fetch('/api/compare', {
+                const response = await fetch(`${API_BASE}/api/compare`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({run_id_1: parseInt(runId1), run_id_2: parseInt(runId2)})
@@ -1088,41 +1322,221 @@ execution: first_day_only
                     const comparison = result.comparison;
                     const container = document.getElementById('comparison-results');
                     
-                    let html = '<div class="grid grid-cols-2 gap-4 mb-4">';
-                    html += '<div><h3 class="font-semibold">' + comparison.run1.name + '</h3>';
-                    html += '<pre class="text-sm bg-gray-100 p-2 rounded">' + JSON.stringify(comparison.run1.metrics, null, 2) + '</pre></div>';
-                    html += '<div><h3 class="font-semibold">' + comparison.run2.name + '</h3>';
-                    html += '<pre class="text-sm bg-gray-100 p-2 rounded">' + JSON.stringify(comparison.run2.metrics, null, 2) + '</pre></div>';
-                    html += '</div>';
+                    // Overall winner banner
+                    const overallWinner = comparison.overall_winner || 'tie';
+                    const score = comparison.score || {run1_wins: 0, run2_wins: 0, ties: 0};
+                    let winnerBanner = '';
                     
-                    html += '<h3 class="font-semibold mb-2">Differences</h3>';
-                    html += '<table class="w-full border-collapse border border-gray-300">';
-                    html += '<tr class="bg-gray-100"><th class="border p-2">Metric</th><th class="border p-2">Run 1</th><th class="border p-2">Run 2</th><th class="border p-2">Difference</th><th class="border p-2">Winner</th></tr>';
-                    
-                    for (const [metric, diff] of Object.entries(comparison.differences)) {
-                        html += `<tr>
-                            <td class="border p-2">${metric}</td>
-                            <td class="border p-2">${diff.run1.toFixed(2)}</td>
-                            <td class="border p-2">${diff.run2.toFixed(2)}</td>
-                            <td class="border p-2">${diff.difference.toFixed(2)}</td>
-                            <td class="border p-2">${diff.winner}</td>
-                        </tr>`;
+                    if (overallWinner === 'run1') {
+                        winnerBanner = `
+                            <div class="bg-green-100 border-2 border-green-500 rounded-lg p-4 mb-6">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <h3 class="text-2xl font-bold text-green-800">🏆 Winner: ${comparison.run1.name}</h3>
+                                        <p class="text-sm text-green-700 mt-1">Won ${score.run1_wins} metrics vs ${score.run2_wins} for ${comparison.run2.name}</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-3xl font-bold text-green-800">${score.run1_wins}</div>
+                                        <div class="text-sm text-green-700">Wins</div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else if (overallWinner === 'run2') {
+                        winnerBanner = `
+                            <div class="bg-green-100 border-2 border-green-500 rounded-lg p-4 mb-6">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <h3 class="text-2xl font-bold text-green-800">🏆 Winner: ${comparison.run2.name}</h3>
+                                        <p class="text-sm text-green-700 mt-1">Won ${score.run2_wins} metrics vs ${score.run1_wins} for ${comparison.run1.name}</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-3xl font-bold text-green-800">${score.run2_wins}</div>
+                                        <div class="text-sm text-green-700">Wins</div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        winnerBanner = `
+                            <div class="bg-yellow-100 border-2 border-yellow-500 rounded-lg p-4 mb-6">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <h3 class="text-xl font-bold text-yellow-800">🤝 Tie</h3>
+                                        <p class="text-sm text-yellow-700 mt-1">Both runs won ${score.run1_wins} metrics each</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
                     }
                     
-                    html += '</table>';
+                    let html = winnerBanner;
+                    
+                    // Metric comparison table
+                    html += '<h3 class="text-xl font-bold mb-4">Metric Comparison</h3>';
+                    html += '<div class="overflow-x-auto">';
+                    html += '<table class="w-full border-collapse border border-gray-300 text-sm">';
+                    html += '<thead><tr class="bg-gray-100">';
+                    html += '<th class="border p-2 text-left">Metric</th>';
+                    html += `<th class="border p-2 text-left ${overallWinner === 'run1' ? 'bg-green-100 font-bold' : ''}">${comparison.run1.name}</th>`;
+                    html += `<th class="border p-2 text-left ${overallWinner === 'run2' ? 'bg-green-100 font-bold' : ''}">${comparison.run2.name}</th>`;
+                    html += '<th class="border p-2 text-center">Difference</th>';
+                    html += '<th class="border p-2 text-center font-bold bg-gray-200">Winner</th>';
+                    html += '</tr></thead><tbody>';
+                    
+                    // Format metric names for display
+                    const metricLabels = {
+                        'total_return': 'Total Return (%)',
+                        'cagr': 'CAGR (%)',
+                        'annualized_return': 'Annualized Return (%)',
+                        'sharpe_ratio': 'Sharpe Ratio',
+                        'sortino_ratio': 'Sortino Ratio',
+                        'max_drawdown': 'Max Drawdown (%)',
+                        'max_drawdown_duration': 'Max Drawdown Duration (days)',
+                        'volatility': 'Volatility (%)',
+                        'win_rate': 'Win Rate (%)',
+                        'profit_factor': 'Profit Factor',
+                        'avg_win': 'Avg Win (%)',
+                        'avg_loss': 'Avg Loss (%)',
+                        'total_trades': 'Total Trades',
+                        'time_in_negative': 'Time in Negative (%)'
+                    };
+                    
+                    for (const [metric, diff] of Object.entries(comparison.differences)) {
+                        const label = metricLabels[metric] || metric;
+                        const run1Val = diff.run1 || 0;
+                        const run2Val = diff.run2 || 0;
+                        const difference = diff.difference || 0;
+                        const winner = diff.winner || 'tie';
+                        const higherIsBetter = diff.higher_is_better !== false; // Default to true
+                        
+                        // Format values based on metric type
+                        const formatValue = (val) => {
+                            if (metric.includes('ratio') || metric === 'profit_factor') {
+                                return val.toFixed(2);
+                            } else if (metric.includes('return') || metric.includes('drawdown') || metric.includes('volatility') || metric.includes('rate') || metric.includes('win') || metric.includes('loss') || metric.includes('negative')) {
+                                return val.toFixed(2) + '%';
+                            } else if (metric.includes('duration') || metric === 'total_trades') {
+                                return Math.round(val).toString();
+                            }
+                            return val.toFixed(2);
+                        };
+                        
+                        // Determine cell colors
+                        let run1Class = '';
+                        let run2Class = '';
+                        let winnerClass = '';
+                        
+                        if (winner === 'run1') {
+                            run1Class = 'bg-green-100 font-semibold';
+                            run2Class = 'bg-red-50';
+                            winnerClass = 'bg-green-200 font-bold text-green-800';
+                        } else if (winner === 'run2') {
+                            run1Class = 'bg-red-50';
+                            run2Class = 'bg-green-100 font-semibold';
+                            winnerClass = 'bg-green-200 font-bold text-green-800';
+                        } else {
+                            winnerClass = 'bg-gray-100 text-gray-600';
+                        }
+                        
+                        html += '<tr>';
+                        html += `<td class="border p-2 font-medium">${label}</td>`;
+                        html += `<td class="border p-2 text-right ${run1Class}">${formatValue(run1Val)}</td>`;
+                        html += `<td class="border p-2 text-right ${run2Class}">${formatValue(run2Val)}</td>`;
+                        
+                        // Difference column
+                        const diffSign = difference > 0 ? '+' : '';
+                        const diffClass = winner === 'run1' ? 'text-red-600' : winner === 'run2' ? 'text-green-600' : 'text-gray-600';
+                        html += `<td class="border p-2 text-right ${diffClass}">${diffSign}${formatValue(difference)}</td>`;
+                        
+                        // Winner column
+                        let winnerText = '';
+                        if (winner === 'run1') {
+                            winnerText = comparison.run1.name;
+                        } else if (winner === 'run2') {
+                            winnerText = comparison.run2.name;
+                        } else {
+                            winnerText = 'Tie';
+                        }
+                        html += `<td class="border p-2 text-center ${winnerClass}">${winnerText}</td>`;
+                        html += '</tr>';
+                    }
+                    
+                    html += '</tbody></table></div>';
+                    
+                    // Add equity curve comparison chart if available
+                    if (comparison.equity_curves && comparison.equity_curves.length > 0) {
+                        html += '<div class="mt-6">';
+                        html += '<h3 class="text-xl font-bold mb-4">Equity Curve Comparison</h3>';
+                        html += '<div id="compare-chart" style="height: 400px;"></div>';
+                        html += '</div>';
+                    }
+                    
                     container.innerHTML = html;
+                    
+                    // Draw comparison chart if data available
+                    if (comparison.equity_curves && comparison.equity_curves.length > 0) {
+                        const dates = comparison.equity_curves.map(e => {
+                            const date = e.date || e.Date || '';
+                            if (typeof date === 'string') {
+                                return date.split('T')[0].split(' ')[0];
+                            }
+                            return date;
+                        }).filter(d => d && d.match(/^\d{4}-\d{2}-\d{2}$/));
+                        
+                        const run1Values = comparison.equity_curves.map(e => {
+                            const val = e.total_value_1 || e.totalValue_1 || e.total_value || 0;
+                            return val;
+                        });
+                        
+                        const run2Values = comparison.equity_curves.map(e => {
+                            const val = e.total_value_2 || e.totalValue_2 || 0;
+                            return val;
+                        });
+                        
+                        if (dates.length > 0) {
+                            Plotly.newPlot('compare-chart', [
+                                {
+                                    x: dates,
+                                    y: run1Values,
+                                    type: 'scatter',
+                                    mode: 'lines',
+                                    name: comparison.run1.name,
+                                    line: { color: '#3B82F6', width: 2 }
+                                },
+                                {
+                                    x: dates,
+                                    y: run2Values,
+                                    type: 'scatter',
+                                    mode: 'lines',
+                                    name: comparison.run2.name,
+                                    line: { color: '#10B981', width: 2 }
+                                }
+                            ], {
+                                title: 'Equity Curve Comparison',
+                                xaxis: { 
+                                    title: 'Date',
+                                    type: 'date'
+                                },
+                                yaxis: { title: 'Portfolio Value ($)' },
+                                hovermode: 'x unified',
+                                showlegend: true,
+                                margin: { l: 60, r: 20, t: 40, b: 60 }
+                            });
+                        }
+                    }
                 } else {
-                    alert('Error: ' + result.error);
+                    alert('Error: ' + (result.error || 'Unknown error'));
                 }
             } catch (error) {
-                alert('Error: ' + error.message);
+                alert('Error comparing runs: ' + error.message);
             }
         }
         
         // Load strategy files list
         async function loadStrategyList() {
             try {
-                const response = await fetch('/api/strategies/list');
+                const response = await fetch(`${API_BASE}/api/strategies/list`);
                 const result = await response.json();
                 
                 if (result.success) {
@@ -1151,7 +1565,7 @@ execution: first_day_only
             }
             
             try {
-                const response = await fetch(`/api/strategies/load/${filename}`);
+                const response = await fetch(`${API_BASE}/api/strategies/load/${filename}`);
                 const result = await response.json();
                 
                 if (result.success) {
