@@ -7,6 +7,7 @@ from .builtin.dca import DCAStrategy
 from .builtin.laggard_rotation import LaggardRotationStrategy
 from .builtin.momentum_winner import MomentumWinnerStrategy
 from .builtin.mixed_winners_losers import MixedWinnersLosersStrategy
+from .builtin.rsi_mean_reversion import RSIMeanReversionStrategy
 import logging
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ class StrategyFactory:
         'laggard_rotation': LaggardRotationStrategy,
         'momentum_winner': MomentumWinnerStrategy,
         'mixed_winners_losers': MixedWinnersLosersStrategy,
+        'rsi_mean_reversion': RSIMeanReversionStrategy,
     }
     
     def __init__(self):

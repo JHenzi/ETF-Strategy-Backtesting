@@ -128,6 +128,7 @@ execution: next_open
 - **laggard_rotation**: Buy worst performing assets
 - **momentum_winner**: Buy best performing assets
 - **mixed_winners_losers**: Buy both winners and losers
+- **rsi_mean_reversion**: Buy oversold assets (RSI < 30), sell overbought (RSI > 70)
 
 See `examples/sample_strategies/` for complete examples.
 

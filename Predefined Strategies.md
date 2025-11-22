@@ -15,17 +15,17 @@ Each strategy describes:
 
 ## Implementation Status
 
-### ✅ Implemented Strategies (5/10)
+### ✅ Implemented Strategies (6/10)
 
 1. ✅ **Laggard Rotation Strategy** - Fully implemented with accumulation logic
 2. ✅ **Momentum Winner Strategy** - Fully implemented with accumulation logic
 3. ✅ **Mixed Winners/Losers Strategy** - Fully implemented with accumulation logic
 4. ✅ **Buy and Hold Strategy** - Fully implemented
 5. ✅ **Dollar Cost Averaging (DCA)** - Fully implemented with recurring contributions
+6. ✅ **RSI Mean Reversion Strategy** - Fully implemented (buy oversold, sell overbought)
 
-### 📋 TODO: Strategies to Implement (5/10)
+### 📋 TODO: Strategies to Implement (4/10)
 
-6. ⏳ **RSI Mean Reversion Strategy** - Not yet implemented
 7. ⏳ **Equal-Weighted Rebalance Strategy** - Not yet implemented
 8. ⏳ **Relative Strength vs Benchmark Strategy** - Not yet implemented
 9. ⏳ **Buy the Dip Strategy** - Not yet implemented
@@ -155,7 +155,7 @@ execution: next_open
 
 ---
 
-# **4. RSI Oversold / Overbought Strategy** ⏳ TODO
+# **4. RSI Oversold / Overbought Strategy** ✅ IMPLEMENTED
 
 ### **Goal:** Buy assets with RSI below a threshold (oversold)
 
@@ -358,7 +358,7 @@ All implemented strategies support:
 
 **Priority Order** (suggested):
 
-1. **RSI Mean Reversion** - Popular indicator, good for mean reversion strategies
+1. ✅ **RSI Mean Reversion** - **COMPLETE** - Popular indicator, good for mean reversion strategies
 2. **SMA Crossover** - Classic trend-following strategy, widely understood
 3. **Buy the Dip** - Useful for market timing strategies
 4. **Equal Weight Rebalance** - Important for portfolio management

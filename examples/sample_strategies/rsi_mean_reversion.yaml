@@ -1,0 +1,16 @@
+name: rsi_mean_reversion
+description: "Buy oversold assets (RSI < 30), sell overbought (RSI > 70)"
+universe:
+  - SPY
+  - AAPL
+  - MSFT
+  - IWM
+  - QQQ
+parameters:
+  rsi_period: 14
+  oversold_threshold: 30
+  overbought_threshold: 70
+rebalance_frequency: daily
+position_sizing: equal_weight
+execution: next_open
+

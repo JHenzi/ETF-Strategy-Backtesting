@@ -40,12 +40,20 @@ class BaseStrategy(ABC):
             logger.warning("No price data provided to strategy")
             return
         
-        # Check if strategy needs lookback period
+        # Check if strategy needs lookback period (for returns) or RSI period
         lookback_days = 0
         if hasattr(self, 'lookback_days'):
             lookback_days = self.lookback_days
+        elif hasattr(self, 'rsi_period'):
+            # RSI needs at least rsi_period + 1 days of data
+            lookback_days = self.rsi_period + 1
         elif hasattr(self, 'config') and 'parameters' in self.config:
             lookback_days = self.config['parameters'].get('lookback_days', 0)
+            if lookback_days == 0:
+                # Check for RSI period
+                rsi_period = self.config['parameters'].get('rsi_period', 0)
+                if rsi_period > 0:
+                    lookback_days = rsi_period + 1
         
         if lookback_days > 0:
             # Check each ticker has sufficient data

@@ -130,7 +130,7 @@
 
 - ✅ Data ingestion + per-ticker caching (yfinance) - **COMPLETE**
 - ✅ Core backtesting engine supporting fractional shares, recurring contributions, fully-invested logic, and trade ledger - **COMPLETE**
-- ✅ YAML schema + 5 built-in strategies: Buy & Hold, DCA, Momentum Winner, Laggard Rotation, Mixed Winners/Losers - **COMPLETE** (exceeded MVS)
+- ✅ YAML schema + 6 built-in strategies: Buy & Hold, DCA, Momentum Winner, Laggard Rotation, Mixed Winners/Losers, RSI Mean Reversion - **COMPLETE** (exceeded MVS)
 - ✅ Flask UI: run a backtest, show equity curve, metrics table, trades list, and compare two runs - **COMPLETE**
 - ✅ Persist completed runs to SQLite and be able to load them - **COMPLETE**
 
@@ -163,15 +163,15 @@
 **Epic 3 — Strategy Configuration** 🟡 PARTIALLY COMPLETE
 - ✅ YAML schema validator with clear error messages
 - ✅ Strategy factory for loading strategies
-- ✅ Built-in strategies implemented (5/10):
+- ✅ Built-in strategies implemented (6/10):
   - ✅ Buy & Hold
   - ✅ DCA (Dollar Cost Averaging)
   - ✅ Laggard Rotation (with accumulation logic)
   - ✅ Momentum Winner (with accumulation logic)
   - ✅ Mixed Winners/Losers (with accumulation logic)
+  - ✅ **NEW**: RSI Mean Reversion (buy oversold, sell overbought)
 - ✅ Sample YAML files in examples/sample_strategies/
-- ⏳ **TODO**: Additional strategies to implement (5 remaining):
-  - ⏳ RSI Mean Reversion
+- ⏳ **TODO**: Additional strategies to implement (4 remaining):
   - ⏳ SMA Crossover
   - ⏳ Relative Strength vs Benchmark
   - ⏳ Buy the Dip
@@ -225,9 +225,8 @@
 
 ### High Priority
 
-**Epic 3 — Additional Strategies** (5 remaining from Predefined Strategies.md)
-- [ ] **RSI Mean Reversion Strategy** - Buy oversold assets (RSI < 30), sell overbought (RSI > 70)
-  - Requires: RSI calculation function, oversold/overbought thresholds
+**Epic 3 — Additional Strategies** (4 remaining from Predefined Strategies.md)
+- [x] **RSI Mean Reversion Strategy** - Buy oversold assets (RSI < 30), sell overbought (RSI > 70) ✅ **COMPLETE**
   - Implementation: `backtest_engine/strategies/builtin/rsi_mean_reversion.py`
   - YAML example: `examples/sample_strategies/rsi_mean_reversion.yaml`
 - [ ] **SMA Crossover Strategy** - Trend-following: buy when short SMA > long SMA
