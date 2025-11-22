@@ -1,16 +1,46 @@
 # Stock/ETF Backtesting Engine
 
-A flexible, local-first Python backtesting and analysis suite for ETFs and stocks. Define, run, compare, and visualize trading strategies with an interactive web dashboard.
+A production-ready, local-first Python backtesting framework for building and testing algorithmic trading strategies. Perfect for developers, quants, and traders who need a flexible, extensible backtesting engine with a modern web interface.
 
-## Features
+## 🚀 Key Features
 
-- **Multiple Built-in Strategies**: Buy & Hold, DCA, Momentum, Laggard Rotation, Mixed Winners/Losers, and more
-- **YAML Strategy Configuration**: Define custom strategies using YAML files
-- **Data Caching**: Automatic caching of market data from Yahoo Finance to SQLite
-- **Comprehensive Metrics**: CAGR, Sharpe, Sortino, max drawdown, win rate, volatility, and more
-- **Interactive Dashboard**: Flask web interface with Plotly visualizations
-- **Run Comparison**: Compare multiple backtest runs side-by-side
-- **Persistent Storage**: All runs saved to SQLite for later analysis
+### Core Engine Capabilities
+- **Modular Strategy Architecture**: Extensible base class system for implementing custom trading strategies
+- **Multiple Execution Models**: Support for `next_open`, `same_day`, `first_day_only`, and `market_close` execution timing
+- **Portfolio Simulation**: Full portfolio accounting with fractional shares, cash management, and position tracking
+- **Recurring Contributions**: Built-in support for weekly/monthly reinvestments with configurable schedules
+- **Equal Cash Allocation**: Automatic splitting of available cash across multiple buy orders
+- **Trading Day Alignment**: Smart handling of market holidays and weekends using actual trading calendars
+
+### Built-in Trading Strategies
+- **Buy & Hold**: Baseline strategy for benchmarking
+- **Dollar Cost Averaging (DCA)**: Systematic investing with regular contributions
+- **Laggard Rotation**: Mean reversion strategy buying worst performers
+- **Momentum Winner**: Trend-following strategy buying best performers
+- **Mixed Winners/Losers**: Combination strategy buying both extremes
+- **RSI Mean Reversion**: Technical indicator-based strategy (RSI oversold/overbought)
+
+### Data & Analytics
+- **Yahoo Finance Integration**: Automatic data fetching via `yfinance` with intelligent caching
+- **SQLite Data Cache**: Persistent local storage for fast historical data access
+- **Comprehensive Metrics**: CAGR, Sharpe ratio, Sortino ratio, max drawdown, win rate, volatility, profit factor, and more
+- **QQQ Baseline Comparison**: Automatic comparison against QQQ with matching investment patterns
+- **Rolling Metrics**: 30/60/90-day rolling window calculations
+
+### Web Interface & Visualization
+- **Interactive Dashboard**: Modern Flask + Tailwind CSS + Plotly web application
+- **Strategy Builder UI**: Visual form-based strategy creation with type-ahead ticker search
+- **YAML Editor**: Direct YAML editing with syntax validation
+- **Results Visualization**: Interactive equity curves, drawdown charts, and trade history tables
+- **Run Comparison**: Side-by-side metric comparison with conditional highlighting
+- **Real-time Job Tracking**: Progress bars and status updates for long-running backtests
+
+### Developer Experience
+- **YAML Strategy Configuration**: Human-readable strategy definitions
+- **Strategy Factory Pattern**: Pluggable strategy system for easy extension
+- **RESTful API**: Complete API for programmatic access
+- **SQLite Persistence**: All backtest runs saved for later analysis and comparison
+- **Comprehensive Logging**: Detailed execution logs for debugging and analysis
 
 ## Screenshots
 
@@ -181,15 +211,38 @@ buylow/
 - **Yahoo Finance**: Historical OHLCV data via `yfinance`
 - **Caching**: All data cached locally in SQLite for fast access
 
-## Development
+## 🏗️ Architecture & Design
 
-The system is designed to be:
-- **Local-first**: Runs entirely on your machine
-- **Extensible**: Easy to add new strategies
-- **Reproducible**: Deterministic results given same inputs
-- **User-friendly**: Web interface for non-technical users
+### Why This Engine?
 
-## Recent Changes (November 2025)
+Built for developers who need:
+- **Flexibility**: Easy to extend with custom strategies and indicators
+- **Reproducibility**: Deterministic results with full audit trails
+- **Performance**: Efficient portfolio simulation with SQLite caching
+- **Usability**: Both programmatic API and intuitive web interface
+- **Local-First**: Complete control over your data and strategies
+
+### Technical Highlights
+
+- **Object-Oriented Design**: Clean separation between strategies, execution, portfolio, and metrics
+- **Type Safety**: Full type hints throughout the codebase
+- **Error Handling**: Robust validation and error messages
+- **Testing Ready**: Modular architecture facilitates unit testing
+- **Production Ready**: Handles edge cases, missing data, and market holidays gracefully
+
+## 📊 Performance Metrics
+
+The engine calculates comprehensive performance metrics:
+
+- **Return Metrics**: Total return, CAGR (Compound Annual Growth Rate), Annualized return
+- **Risk-Adjusted Returns**: Sharpe ratio, Sortino ratio
+- **Risk Metrics**: Volatility (standard deviation), Maximum drawdown, Drawdown duration
+- **Trade Analysis**: Win rate, Profit factor, Average win/loss, Total trades
+- **Time Analysis**: Time in negative territory
+
+All metrics are calculated for both your strategy and the QQQ baseline for fair comparison.
+
+## 🔧 Recent Updates
 
 ### New Features
 - **Strategy Builder UI**: Guided form to create YAML strategies without manual editing
@@ -217,69 +270,7 @@ The system is designed to be:
 - **All Rotation Strategies**: Changed to accumulation-only (no selling, only buying)
 - **Cash Allocation**: Always divides available cash equally by number of target stocks/ETFs
 
-### Known Issues
-- **Resolved**: Zero results bug has been fixed - strategies now execute trades correctly
-
-## Troubleshooting
-
-### Problem: Backtest Returns All Zeros
-
-If your backtest shows all metrics as 0 (total_trades: 0, total_return: 0, etc.), this indicates trades aren't being executed.
-
-#### Step 1: Check the Logs
-Look for these log messages in the console:
-- `"Generated X signals"` - Strategy is generating buy/sell signals
-- `"Executing X orders"` - Orders are being executed
-- `"Bought X shares"` - Trades are completing
-- `"Portfolio value: $X"` - Portfolio is being tracked
-
-If these messages are missing, the issue is in signal generation or execution.
-
-#### Step 2: Test with Buy & Hold
-Try the simplest strategy first:
-```yaml
-name: buy_and_hold
-universe:
-  - SPY
-position_sizing: equal_weight
-execution: first_day_only
-```
-
-This should always work and show non-zero returns if the engine is functioning.
-
-#### Step 3: Verify Data Availability
-- Check that ticker symbols are valid (use the "Validate All" button in Strategy Builder)
-- Ensure date range has trading days (avoid weekends/holidays)
-- Verify price data exists for your date range
-
-#### Step 4: Check Rebalance Logic
-For rebalancing strategies:
-- Ensure `rebalance_frequency` is set (weekly, monthly, etc.)
-- Check that the date range spans multiple rebalance periods
-- Verify `lookback_days` is reasonable (not longer than date range)
-
-#### Step 5: Enable Debug Logging
-The engine logs key events. Check the console output for:
-- Rebalance decisions
-- Signal generation
-- Order execution
-- Portfolio updates
-
-### Common Issues
-
-**Issue**: "No data for ticker X"
-- **Solution**: Validate ticker first, or use a different ticker
-
-**Issue**: "Strategy validation failed"
-- **Solution**: Check YAML syntax and required parameters for your strategy type
-
-**Issue**: "Invalid tickers" error
-- **Solution**: Use the ticker validation feature before running backtest
-
-**Issue**: Backtest completes instantly with no trades
-- **Solution**: Check that rebalance_frequency is set and date range is long enough
-
-## How It Works
+## 🔍 How It Works
 
 ### Backtest Execution Flow
 
@@ -346,16 +337,42 @@ For weekly rebalancing:
 - Chart displays both equity curves overlaid for visual comparison
 - "Beat QQQ" indicator shows if strategy outperformed baseline
 
-## Future Enhancements
+## 🎯 Use Cases
 
-- **✅ Baseline Comparison**: QQQ comparison implemented (see above)
-- **Enhanced Stock/ETF Picker**: Interactive checkbox selection with search/filter (see GOALS.md)
-- **Additional Strategies**: RSI, SMA crossover, Relative Strength, Buy the Dip
-- **More Sophisticated Position Sizing**: Kelly Criterion, risk-based sizing
-- **Commission & Slippage Modeling**: Realistic trading costs
-- **Live Mode**: Daily price updates and simulated live portfolio
-- **Export Results**: CSV/Excel export for trades and equity curve
-- **Custom Benchmark Selection**: Allow users to choose benchmark other than QQQ
+Perfect for:
+- **Algorithmic Traders**: Test and refine trading strategies before live trading
+- **Quantitative Researchers**: Backtest hypotheses and validate trading ideas
+- **Portfolio Managers**: Compare different allocation strategies
+- **Financial Developers**: Build custom backtesting solutions on a solid foundation
+- **Students & Educators**: Learn backtesting concepts with a working example
+
+## 🛠️ Extending the Engine
+
+### Adding Custom Strategies
+
+1. Create a new strategy class extending `BaseStrategy`
+2. Implement the `generate_signals()` method
+3. Register it in `strategy_factory.py`
+4. Create a YAML example in `examples/sample_strategies/`
+
+See existing strategies in `backtest_engine/strategies/builtin/` for examples.
+
+### Custom Indicators
+
+The base strategy class provides helper methods:
+- `calculate_rsi()` - Relative Strength Index
+- `calculate_sma()` - Simple Moving Average
+- `get_returns()` - Price return over lookback period
+- `get_price()` - Get adjusted close price for any date
+
+## 🚧 Roadmap
+
+- **Additional Strategies**: SMA Crossover, Relative Strength vs Benchmark, Buy the Dip, Equal Weight Rebalance
+- **Advanced Position Sizing**: Kelly Criterion, risk-based sizing, volatility targeting
+- **Trading Costs**: Commission and slippage modeling
+- **Live Mode**: Daily price updates and simulated live portfolio tracking
+- **Export Capabilities**: CSV/Excel export for trades and equity curves
+- **Custom Benchmarks**: Select any benchmark (not just QQQ) for comparison
 
 ## License
 
