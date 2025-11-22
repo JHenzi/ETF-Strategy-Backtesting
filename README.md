@@ -1,6 +1,9 @@
-# Stock/ETF Backtesting Engine
+# BACKGENIE - Stock/ETF Backtesting Engine
 
-A production-ready, local-first Python backtesting framework for building and testing algorithmic trading strategies. Perfect for developers, quants, and traders who need a flexible, extensible backtesting engine with a modern web interface.
+> **Problem Statement**: I have money to invest now, and will continue to invest in the future. Should I just invest in index fund as many suggest or should I invest in a variety of funds/sectors/stocks? When should I rebalance? How can I know if my investing strategy makes sense?
+
+
+**Solution**: A production-ready, local-first Python backtesting framework for building and testing algorithmic trading strategies. Perfect for developers, quants, and traders who need a flexible, extensible backtesting engine with a modern web interface.
 
 ## 🚀 Key Features
 
